@@ -1,0 +1,5 @@
+pandas deployment
+pip install "pandas[performance,excel,plot,output-formatting,computation,clipboard,parquet,compression]"
+
+pytorch deployment
+pip install torch torchvision torchaudio
