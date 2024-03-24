@@ -8,20 +8,39 @@ import pickle
 import sys
 import networkx as nx
 import numpy as np
+import pandas as pd
 import torch
 from torch.nn.parameter import Parameter
 import torch.nn.functional as F
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
+from tqdm import tqdm
+from collections import Counter
+import json
 
 from sklearn.model_selection import train_test_split
 
-from models.GNN_PyTorch import GNNModel, collate_graphs
+from models.GNN_PyTorch import GNNModel
 
 
 import matplotlib
 matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
+
+# pandas display options
+# do not fold dataframes
+pd.set_option('expand_frame_repr',False)
+# maximum number of columns
+pd.set_option("display.max_columns",50)
+# maximum number of rows
+pd.set_option("display.max_rows",500)
+# precision of float numbers
+pd.set_option("display.precision",3)
+# maximum column width
+pd.set_option("max_colwidth", 250)
+
+# enable pandas copy-on-write
+pd.options.mode.copy_on_write = True
 
 
 # import the training dataset
@@ -37,22 +56,23 @@ n_mols = tox_data.shape[0]
 for i_mol in range(n_mols):
     graph = {'A': torch.from_numpy(np.array(adjacency_matrices.iloc[i_mol]['adjacency matrix'])).float(),
              'X': torch.from_numpy(np.array(X.loc[X['mol ID']==i_mol].drop('mol ID', axis='columns'))).float(),
+
              'y': torch.tensor([1 if (labels.iloc[i_mol]=='positive') else 0]), 'batch': None}
     graph_list.append(graph)
-graph_list_training, graph_list_validation = train_test_split(graph_list, test_size=0.2, random_state=2, stratify=labels)
+graph_list_training, graph_list_validation = train_test_split(graph_list, test_size=0.2, random_state=1, stratify=labels)
 
 # set the PyTorch model
 # from models.GNN_PyTorch_simple import GNNModel
 # model = GNNModel(num_features)
 model = GNNModel(n_input=num_features,
-                 n_conv=4, n_conv_hidden=32,
-                 n_lin=3, n_lin_hidden=16,
+                 n_conv=10, n_conv_hidden=32,
+                 n_lin=1, n_lin_hidden=24,
                  dropout=0.3,
                  activation_function=torch.nn.functional.leaky_relu,
                  n_classes=2)
 
 
-model.fit(graph_list_training, graph_list_validation, n_epocs=100, learning_rate=0.004, batch_size=200)
+model.fit(graph_list_training, graph_list_validation, n_epocs=1000, learning_rate=0.004, batch_size=200)
 
 
 # single model prediction (returns logits in tensor form)
@@ -118,8 +138,5 @@ for part in ['training', 'validation']:
         y_true = [graph['y'].item() for graph in graph_list_validation]
         RocCurveDisplay.from_predictions(y_true, prob, ax=ax, name='validation')
 plt.show()
-
-
-
 
 

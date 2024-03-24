@@ -153,9 +153,23 @@ edges['bond type'] = edges['adjacency_properties'].apply(lambda bond_properties:
 edges = pd.concat([edges[['mol ID', 'atom IDs']], pd.get_dummies(edges['bond type'], prefix='BndTyp', dtype=int)], axis='columns', sort=False, ignore_index=False)
 
 # export the training dataset
+# the exported dataset assumes that all molecular structure preprocessing has been completed
+# the dataset is stored in a pickle file that contains
+# tox_data: toxicity data with the columns 'mol ID', 'smiles', 'cas_number', 'result', 'mol'
+# X: node matrix
+# X: adjacency matrices
+# edges: edge matrices
+# labels: labels, strings 'positive' and 'negative'
 import pickle
 outf = Path('training_sets/Hansen_2009.pkl')
 with open(outf, 'wb') as file:
     tmp = (tox_data, X, adjacency_matrices, edges, labels)
     pickle.dump(tmp, file)
     log.info(f'dataset stored in {outf}')
+
+arr = adjacency_matrices['adjacency matrix'][0]
+indices = np.where(arr == 1)
+indices_list = set(zip(indices[0], indices[1]))
+indices_list2 = set(edges.loc[edges['mol ID']==0, 'atom IDs'])
+
+indices_list.difference(indices_list2)

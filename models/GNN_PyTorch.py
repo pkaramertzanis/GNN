@@ -1,8 +1,10 @@
+import logger
+log = logger.get_logger(__name__)
+
 # setup logging
 import numpy as np
 
-import logger
-log = logger.get_logger(__name__)
+
 
 import torch
 from torch.nn.parameter import Parameter
@@ -33,6 +35,9 @@ class BasicGraphConvolutionLayer(torch.nn.Module):
     def forward(self, X, A):
         potential_msgs = torch.mm(X, self.W2)
         propagated_msgs = torch.mm(A, potential_msgs)
+        # normalise with the number of nodes
+        propagated_msgs = propagated_msgs / A.sum(dim=1, keepdims=True)
+        # update
         root_update = torch.mm(X, self.W1)
         output = propagated_msgs + root_update + self.bias
         return output
@@ -128,10 +133,10 @@ class GNNModel(torch.nn.Module):
 
         dset_training = GNNDataset(graph_list_training)
         loader_training = DataLoader(dset_training, batch_size=batch_size, shuffle=True, collate_fn=collate_graphs,
-                                     drop_last=True)
+                                     drop_last=False)
         dset_validation = GNNDataset(graph_list_validation)
         loader_validation = DataLoader(dset_validation, batch_size=batch_size, shuffle=True, collate_fn=collate_graphs,
-                                     drop_last=True)
+                                     drop_last=False)
 
         # train the model (multiclass classification problem)
         loss_fn = torch.nn.CrossEntropyLoss(weight=torch.tensor([1., 1.]))
