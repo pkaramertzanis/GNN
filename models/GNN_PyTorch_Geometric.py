@@ -111,7 +111,7 @@ class GNNDatasetPyG(InMemoryDataset):
             # standardise the molecule
             mol_std, info_error_warning = standardise_mol(mols[i_mol], ops=self.standardiser_ops)
             if mol_std is not None:
-                mols_std.append(mols[i_mol])
+                mols_std.append(mol_std)
             else:
                 log.info(f'skipping molecule {i_mol} because it could not be standardised ({info_error_warning})')
                 continue
@@ -221,8 +221,8 @@ class GNNModelPyG(torch.nn.Module):
                  n_classes: int):
         """
         Initialises the PyTorch Geometric model
-        :param num_node_features:
-        :param num_edge_features:
+        :param num_node_features: number of node features
+        :param num_edge_features: number of edge features
         :param n_conv: number of convolutional layers
         :param n_edge_NN: number of neurons in the edge FNN
         :param n_conv_hidden: number of hidden features in the convolutional layers
@@ -427,9 +427,15 @@ def plot_metrics(metrics_history: dict, output: Path):
     loss_val = [metrics['validation']['loss'] for metrics in metrics_history]
     axs[0].plot(loss_train, label='training', c='k', linewidth=0.5)
     axs[0].plot(loss_val, label='validation', c='k', linestyle='dashed', linewidth=0.5)
-    axs[0].set_title('loss')
+    n_last_epochs = 10
+    train_loss_converged = sum(loss_train[-n_last_epochs:]) / n_last_epochs
+    val_loss_converged = sum(loss_val[-n_last_epochs:]) / n_last_epochs
+    title = f'loss: training {train_loss_converged:.5f}, validation {val_loss_converged:.5f}'
+    axs[0].set_title(title)
     axs[0].legend()
+    axs[0].set_ylim(0, 1.1*max(loss_val))
     axs[0].set_ylabel('loss')
+
     # training metrics
     accuracy_train = [metrics['training']['accuracy'] for metrics in metrics_history]
     precision_train = [metrics['training']['precision'] for metrics in metrics_history]
@@ -442,6 +448,9 @@ def plot_metrics(metrics_history: dict, output: Path):
     axs[1].plot(precision_train, label=f'precision', linestyle=style, c='r', linewidth=0.5)
     axs[1].plot(recall_train, label=f'recall', linestyle=style, c='g', linewidth=0.5)
     axs[1].plot(f1_score_train, label=f'F1 score', linestyle=style, c='y', linewidth=0.5)
+    train_f1_converged = sum(f1_score_train[-n_last_epochs:]) / n_last_epochs
+    title = f'F1 score: training {train_f1_converged:.5f}'
+    axs[1].set_title(title)
     axs[1].legend()
 
     # validation metrics
@@ -456,6 +465,9 @@ def plot_metrics(metrics_history: dict, output: Path):
     axs[2].plot(precision_val, label=f'precision', linestyle=style, c='r', linewidth=0.5)
     axs[2].plot(recall_val, label=f'recall', linestyle=style, c='g', linewidth=0.5)
     axs[2].plot(f1_score_val, label=f'F1 score', linestyle=style, c='y', linewidth=0.5)
+    val_f1_converged = sum(f1_score_val[-n_last_epochs:]) / n_last_epochs
+    title = f'F1 score: validation {val_f1_converged:.5f}'
+    axs[2].set_title(title)
     axs[2].legend()
     fig.tight_layout()
     # save the figure

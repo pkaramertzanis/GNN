@@ -185,7 +185,7 @@ def standardise_mol(mol: Chem.Mol, ops: list[str]=['cleanup', 'addHs'])  -> tupl
         try:
             for op in ops:
                 if op == 'cleanup':
-                    mol_std = rdMolStandardize.Cleanup(mol)
+                    mol_std = rdMolStandardize.Cleanup(mol_std)
                 elif op == 'addHs':
                     mol_std = Chem.AddHs(mol_std)
         except Exception as ex:
@@ -196,5 +196,9 @@ def standardise_mol(mol: Chem.Mol, ops: list[str]=['cleanup', 'addHs'])  -> tupl
             mol_std = None
 
     return (mol_std, error_warning)
-
-
+#
+# from rdkit import Chem
+# i_mol = 0
+# mol = mols[i_mol]
+# mol = Chem.AddHs(mol)
+# [atom.GetSymbol() for atom in mol.GetAtoms()]

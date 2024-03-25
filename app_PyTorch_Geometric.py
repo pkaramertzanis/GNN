@@ -59,6 +59,17 @@ dset = GNNDatasetPyG(root=Path(r'D:\myApplications\local\2024_01_21_GCN_Muta\dat
                      standardiser_ops = ['cleanup', 'addHs']
                      )
 
+# Hansen 2009 dataset
+dset = GNNDatasetPyG(root=Path(r'D:\myApplications\local\2024_01_21_GCN_Muta\datasets/Hansen_2009/processed/PyTorch_Geometric'),
+                     input_sdf=r'D:\myApplications\local\2024_01_21_GCN_Muta\datasets\Hansen_2009\processed\sdf\Ames_generic_Hansen_2009.sdf',
+                     target_assay_name='AMES',
+                     force_reload=True,
+                     node_feats=['atom_symbol', 'atom_charge', 'atom_degree', 'atom_hybridization'],
+                     edge_feats=['bond_type', 'is_conjugated'],
+                     checker_ops = {'allowed_atoms': ['C', 'O', 'N', 'Cl', 'S', 'F', 'Br', 'P', 'B','Si', 'I', 'H']},
+                     standardiser_ops = ['cleanup', 'addHs']
+                     )
+
 dset.to(device)
 
 # split into training and test set
@@ -78,10 +89,14 @@ n_conv = 4
 n_edge_NN = 32
 n_conv_hidden = 48
 n_lin = 2
-n_lin_hidden = 128
+n_lin_hidden = 256
 dropout = 0.4
 activation_function = torch.nn.functional.leaky_relu
 n_classes = 2
+# set the seed for reproducibility
+torch.manual_seed(1)
+if torch.cuda.is_available():
+    torch.cuda.manual_seed_all(1)
 net = GNNModelPyG(num_node_features, num_edge_features,
                  n_conv, n_edge_NN, n_conv_hidden,
                  n_lin, n_lin_hidden,
@@ -100,7 +115,7 @@ lambda_group1 = lambda epoch: 0.98 ** epoch
 scheduler = LambdaLR(optimizer, lr_lambda=[lambda_group1])
 
 # number of epochs
-num_epochs = 1000
+num_epochs = 200
 
 # train the model
 metrics_history = train_GNNModelPyG(net, trainloader, testloader, optimizer, loss_fn, scheduler, num_epochs)
