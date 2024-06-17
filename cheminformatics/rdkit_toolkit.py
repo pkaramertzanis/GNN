@@ -17,7 +17,8 @@ from rdkit.Chem.MolStandardize import rdMolStandardize
 # Converting smiles to rdkit molecules
 log.info('Converting smiles to rdkit molecules')
 class Rdkit_operation:
-    '''Utility class to redirect the standard error to a memory buffer and capture the warnings and errors during
+    '''
+    Utility class to redirect the standard error to a memory buffer and capture the warnings and errors during
     cheminformatics operations with RDKit. The utility is used as a context manager, for example:
     with Rdkit_operation() as sio:
         mol = Chem.MolFromSmiles(smiles, sanitize=sanitize)
@@ -100,7 +101,7 @@ def get_node_features(mol: Chem.Mol, feats=['atom_symbol', 'atom_charge', 'atom_
     Computes the node features for a molecule
     :param mol: rdkit molecule
     :param feats: list of node feature names to compute, for now it supports
-                  'atom_symbol' -> atom symbol (string)
+                  'atom_symbol' -> atom symbol (str)
                   'atom_charge' -> atom charge (int64)
                   'atom_degree' -> atom degree (int64)
                   'atom_hybridization' -> atom hybridization (str)
@@ -132,13 +133,14 @@ def get_node_features(mol: Chem.Mol, feats=['atom_symbol', 'atom_charge', 'atom_
     return all_node_feats
 
 
-def get_edge_features(mol: Chem.Mol, feats=['bond_type', 'is_conjugated']) -> pd.DataFrame:
+def get_edge_features(mol: Chem.Mol, feats=['bond_type', 'is_conjugated', 'stereo_type']) -> pd.DataFrame:
     """
     Computes the edge features for a molecule
     :param mol: rdkit molecule
     :param feats: list of edge feature names to compute, for now it supports
-                  'bond_type' -> bond type (string)
-                  'is_conjugated' -> is the bond conjugated (string)
+                  'bond_type' -> bond type (str)
+                  'is_conjugated' -> is the bond conjugated (str)
+                  'stereo_type' -> bond stereochemistry (str)
     :return: pandas dataframe with edge features with shape [number_of_bonds, len(feats)]
     """
     all_edge_feats = []
@@ -150,6 +152,8 @@ def get_edge_features(mol: Chem.Mol, feats=['bond_type', 'is_conjugated']) -> pd
                     edge_feats[feat] = bond.GetBondType().name
                 elif feat == 'is_conjugated':
                     edge_feats[feat] = str(bond.GetIsConjugated())
+                elif feat == 'stereo_type':
+                    edge_feats[feat] = bond.GetStereo().name
                 else:
                     raise ValueError(f'edge feature {feat} not recognised')
             except Exception as ex:
@@ -161,7 +165,64 @@ def get_edge_features(mol: Chem.Mol, feats=['bond_type', 'is_conjugated']) -> pd
     return all_edge_feats
 
 
-def standardise_mol(mol: Chem.Mol, ops: list[str]=['cleanup', 'addHs'])  -> tuple[Chem.Mol, str]:
+def remove_stereo(mol: Chem.Mol, stereo_types=['cis/trans', 'R/S']) -> Chem.Mol:
+    '''
+    Utility function to remove stereochemistry from a molecule, including cis/trans and R/S stereochemistry.
+    :param mol: input molecule
+    :param stereo_types: list of stereochemistry types to remove, for now it supports 'cis/trans' and 'R/S'
+    :return: molecule with
+    '''
+    # check the stereo_types requested are valid
+    all_stereo_type = ['cis/trans', 'R/S']
+    for stereo_type in stereo_types:
+        if stereo_type not in all_stereo_type:
+            ex = ValueError(f'stereochemistry type {stereo_type} not recognised')
+            log.error(ex)
+            raise ex
+    # remove cis/trans stereochemistry
+    if 'cis/trans' in stereo_types:
+        for bond in mol.GetBonds():
+            if bond.GetStereo() in [Chem.BondStereo.STEREOE, Chem.BondStereo.STEREOZ]:
+                bond.SetStereo(Chem.BondStereo.STEREONONE)
+    # remove R/S stereochemistry
+    if 'R/S' in stereo_types:
+        for atom in mol.GetAtoms():
+            if atom.GetChiralTag() in [Chem.ChiralType.CHI_TETRAHEDRAL, Chem.ChiralType.CHI_TETRAHEDRAL_CCW, Chem.ChiralType.CHI_TETRAHEDRAL_CW]:
+                atom.SetChiralTag(Chem.ChiralType.CHI_UNSPECIFIED)
+    # regenerate computed properties like implicit valence and ring information in case it matters
+    mol.UpdatePropertyCache(strict=False)
+    return mol
+
+def derive_canonical_tautomer(mol: Chem.Mol) -> Chem.Mol:
+    '''
+    Derives the canonical tautomer of a molecule. This is not necessarily the most stable tautomer.
+    :param mol: input molecule
+    :return: tuple with the canonical tautomer, warning and error during the tautomerisation
+    '''
+    te = rdMolStandardize.TautomerEnumerator()
+    mol_can_taut = None
+    warning = None
+    error = None
+    with Rdkit_operation() as sio:
+        try:
+            # remove cis/trans and R/S stereochemistry
+            mol_can_taut = remove_stereo(mol)
+            # canonical tautomer (this is not necessarily the most stable)
+            mol_can_taut = te.Canonicalize(mol_can_taut)
+            # remove cis/trans and R/S stereochemistry, in case tautomerism introduced stereoisomerism
+            mol_can_taut = remove_stereo(mol_can_taut)
+            # capture any warnings/errors during the tautomerisation
+            warning = sio.getvalue()
+            if warning:
+                log.info(warning)
+        except Exception as ex:
+            log.error(ex)
+            error = str(ex)
+    return (mol_can_taut, warning, error)
+
+
+
+def standardise_mol(mol: Chem.Mol, ops: list[str]=['cleanup', 'addHs', 'tautomerise', 'remove_stereo'])  -> tuple[Chem.Mol, str]:
     """
     Standardises the RDKit molecule. Exceptions are logged and not raised, instead the returned mol object is None.
     :param mol:
@@ -171,7 +232,7 @@ def standardise_mol(mol: Chem.Mol, ops: list[str]=['cleanup', 'addHs'])  -> tupl
     :return: tuple with resulting mol and warnings/errors during the standardisation
     """
 
-    all_ops = ['cleanup', 'addHs']
+    all_ops = ['cleanup', 'addHs', 'tautomerise', 'remove_stereo']
     # check the standardisation operations requested are valid
     for op in ops:
         if op not in all_ops:
@@ -188,6 +249,11 @@ def standardise_mol(mol: Chem.Mol, ops: list[str]=['cleanup', 'addHs'])  -> tupl
                     mol_std = rdMolStandardize.Cleanup(mol_std)
                 elif op == 'addHs':
                     mol_std = Chem.AddHs(mol_std)
+                elif op == 'tautomerise':
+                    mol_std, _, _ = derive_canonical_tautomer(mol_std)
+                elif op == 'remove_stereo':
+                    mol_std = remove_stereo(mol_std)
+                    print('removed stereo')
         except Exception as ex:
              log.error(ex)
         error_warning = sio.getvalue()

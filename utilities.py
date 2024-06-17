@@ -5,6 +5,7 @@ log = logger.get_logger(__name__)
 import glob
 import pandas as pd
 from pathlib import Path
+from itertools import cycle
 
 def parquet_to_excel(glob_pattern: str) -> None:
     '''
@@ -41,3 +42,18 @@ def create_chunks(lst, n):
     """Yield successive n-sized chunks from lst."""
     for i in range(0, len(lst), n):
         yield lst[i:i + n]
+
+
+
+def zip_recycle(*iterables):
+    '''
+    Zips iterables so that the shorter ones are recycled until the longest one is exhausted
+    :param iterables: iterables to zip
+    :return: zipped iterables
+    '''
+    # Find the length of the longest iterable
+    max_length = max(len(it) for it in iterables)
+    # Create a cycling version of each iterable
+    cycling_iterables = [cycle(it) if len(it)<max_length else it for it in iterables]
+    # Use zip_longest to zip the cycling iterables up to the max length
+    return zip(*cycling_iterables)
