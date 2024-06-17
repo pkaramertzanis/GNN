@@ -1,7 +1,7 @@
 import logger
 log = logger.get_logger(__name__)
 
-from typing import Callable
+from typing import Callable, Union
 from collections import Counter
 import pandas as pd
 from tqdm import tqdm
@@ -18,6 +18,8 @@ from torch_geometric.nn import NNConv, global_add_pool
 from torch_geometric.data import Data, DataLoader
 
 import matplotlib.pyplot as plt
+
+from models.GCN_PyG import GCN_PyG
 
 class GNNDatasetPyG(InMemoryDataset):
     '''
@@ -192,7 +194,7 @@ class GNNDatasetPyG(InMemoryDataset):
                         )
 
             data_list.append(data)
-        log.info(f'added {len(data_list)} structures in the dataaset')
+        log.info(f'added {len(data_list)} structures in the dataset')
 
         if self.pre_filter is not None:
             data_list = [data for data in data_list if self.pre_filter(data)]
@@ -203,104 +205,6 @@ class GNNDatasetPyG(InMemoryDataset):
         self.save(data_list, self.processed_paths[0])
         # For PyG<2.4:
         # torch.save(self.collate(data_list), self.processed_paths[0])
-
-
-
-
-class GNNModelPyG(torch.nn.Module):
-    def __init__(self,
-                 num_node_features: int,
-                 num_edge_features: int,
-                 n_conv: int,
-                 n_edge_NN: int,
-                 n_conv_hidden: int,
-                 n_lin: int,
-                 n_lin_hidden: int,
-                 dropout: float,
-                 activation_function: Callable,
-                 n_classes: int):
-        """
-        Initialises the PyTorch Geometric model
-        :param num_node_features: number of node features
-        :param num_edge_features: number of edge features
-        :param n_conv: number of convolutional layers
-        :param n_edge_NN: number of neurons in the edge FNN
-        :param n_conv_hidden: number of hidden features in the convolutional layers
-        :param n_lin: number of linear layers
-        :param n_lin_hidden: number of hidden features in the linear layers
-        :param dropout: dropout rate
-        :param activation_function: PyTorch activation function, e.g. torch.nn.functional.relu or torch.nn.functional.leaky_relu
-        :param n_classes: number of output classes
-        """
-        super().__init__()
-
-        # general parameters
-        self.dropout = dropout
-        self.activation_function = activation_function
-        self.n_classes = n_classes
-
-        # convolutional layers' parameters
-        self.n_conv = n_conv
-        self.n_edge_NN = n_edge_NN
-        self.n_conv_hidden = n_conv_hidden
-
-        # linear layers' parameters
-        self.n_lin = n_lin
-        self.n_lin_hidden = n_lin_hidden
-
-        # set up the convolutional layers
-        self.conv_layers = torch.nn.ModuleList()
-        # first convolutional layer
-        conv_net = nn.Sequential(nn.Linear(num_edge_features, self.n_edge_NN),
-                                 nn.LeakyReLU(),
-                                 nn.Linear(self.n_edge_NN, num_node_features * self.n_conv_hidden))
-        self.conv_layers.append(NNConv(num_node_features, self.n_conv_hidden, conv_net))
-        # remaining of the convolutional layers
-        for i_conv in range(self.n_conv-1):
-            conv_net = nn.Sequential(nn.Linear(num_edge_features, self.n_edge_NN),
-                                     nn.LeakyReLU(),
-                                     nn.Linear(self.n_edge_NN, self.n_conv_hidden * self.n_conv_hidden))
-            self.conv_layers.append(NNConv(self.n_conv_hidden, self.n_conv_hidden, conv_net))
-
-        # set up the linear layers
-        self.lin_layers = torch.nn.ModuleList()
-        self.lin_layers.append(torch.nn.Linear(self.n_conv_hidden, self.n_lin_hidden))
-        self.lin_layers.extend(
-            [torch.nn.Linear(self.n_lin_hidden, self.n_lin_hidden)
-             for i in range(self.n_lin-1)])
-
-        # set up the output layer
-        self.out_layer = nn.Linear(self.n_lin_hidden, self.n_classes)
-
-        # dropout layer
-        self.dropout = torch.nn.Dropout(0.4)
-
-        # initialise the weights and biases
-        for name, param in self.named_parameters():
-            if 'weight' in name:
-                torch.nn.init.xavier_uniform_(param)
-            if 'bias' in name:
-                torch.nn.init.constant_(param, 0.)
-
-    def forward(self, data):
-        batch, x, edge_index, edge_attr = data.batch, data.x, data.edge_index, data.edge_attr
-
-        # apply the convolutional layers
-        for module in self.conv_layers:
-            x = self.activation_function(module(x, edge_index, edge_attr))
-            x = self.dropout(x)
-
-        # pooling
-        x = global_add_pool(x, batch)
-
-        # apply the linear layers, dropout after activation, https://sebastianraschka.com/faq/docs/dropout-activation.html)
-        for module in self.lin_layers:
-            x = self.activation_function(module(x))
-            x = self.dropout(x)
-
-        # apply the output layer (classification, produces logits)
-        output = self.out_layer(x)
-        return output
 
 
 
@@ -323,7 +227,7 @@ def compute_metrics(tp, tn, fp, fn) -> dict:
             'accuracy': accuracy, 'precision': precision, 'recall': recall, 'f1 score': f1_score}
     return metrics
 
-def train_GNNModelPyG (net: GNNModelPyG,
+def train_GNNModelPyG (net: Union[GCN_PyG],
                        trainloader: DataLoader,
                        testloader: DataLoader,
                        optimizer: torch.optim.Optimizer,
@@ -362,7 +266,8 @@ def train_GNNModelPyG (net: GNNModelPyG,
             y = torch.tensor(y, dtype=torch.long).to(device)
 
             optimizer.zero_grad()
-            pred = net(batch)
+            # pred = net(batch)
+            pred = net(batch.x, batch.edge_index, batch.edge_attr, batch.batch)
             tp += ((torch.argmax(pred, dim=1) == y) & (y == 1)).int().sum()
             tn += ((torch.argmax(pred, dim=1) == y) & (y == 0)).int().sum()
             fp += ((torch.argmax(pred, dim=1) != y) & (y == 0)).int().sum()
@@ -388,7 +293,8 @@ def train_GNNModelPyG (net: GNNModelPyG,
             y = [1 if json.loads(assay_data)[0]['assay_result']=='positive' else 0 for assay_data in batch.assay_data]
             y = torch.tensor(y, dtype=torch.long).to(device)
 
-            pred = net(batch)
+            # pred = net(batch)
+            pred = net(batch.x, batch.edge_index, batch.edge_attr, batch.batch)
             tp += ((torch.argmax(pred, dim=1) == y) & (y == 1)).int().sum()
             tn += ((torch.argmax(pred, dim=1) == y) & (y == 0)).int().sum()
             fp += ((torch.argmax(pred, dim=1) != y) & (y == 0)).int().sum()

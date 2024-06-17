@@ -1,5 +1,5 @@
 '''
-Utility script to convert the original Hansen 2009 mutagenicity dataset (https://doc.ml.tu-berlin.de/toxbenchmark/) to
+Utility script to convert the Leadscope bacterial mutation dataset to
 sdf file. The sdf file is then used to create a PyTorch Geometric dataset. The molecule standardisation and feature
 creation is not performed here, but in the PyTorch Geometric dataset creation script. This is to allow flexibility,
 e.g. to use different feature sets, or to use different standardisation methods when testing predictive performance.
@@ -89,5 +89,5 @@ with Chem.SDWriter(outf) as sdf_writer:
         sdf_writer.write(mol)
 
         count_success += 1
-log.info(f'Hansen dataset size {len(mols)}: {count_success} structures stored in {outf}' )
+log.info(f'Leadscope dataset size {len(mols)}: {count_success} structures stored in {outf}' )
 log.info(f'assay results: {dict(Counter(assay_results))}')
