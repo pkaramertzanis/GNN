@@ -51,8 +51,8 @@ pd.options.mode.copy_on_write = True
 PYTORCH_SEED = 1 # seed for PyTorch random number generator
 MINIMUM_TASK_DATASET = 256 # minimum number of data points for a task
 BATCH_SIZE_MAX = 256 # maximum batch size (largest task, the smaller tasks are scaled accordingly so the number of batches is the same)
-K_FOLD_INNER = 5 # number of folds for the inner cross-validation
-K_FOLD_OUTER = 10 # number of folds for the outer cross-validation
+K_FOLD_INNER = 3 # number of folds for the inner cross-validation
+K_FOLD_OUTER = 3 # number of folds for the outer cross-validation
 NUM_EPOCHS = 3 # number of epochs
 
 # set the device
@@ -145,12 +145,12 @@ for task in dsets:
 # set up the model configurations
 configuration_ID = 0
 configurations = []
-for n_conv_ in [5, 6]: # [1, 2, 3, 4, 5, 6]:
-    for n_lin_ in [2]: #[1, 2, 3, 4]:
-        for n_conv_hidden_ in [64]: #[32, 64, 128, 256]:
-            for n_edge_NN_ in [65]: #[32, 64, 128, 256]:
-                for n_lin_hidden_ in [64]: #[32, 64, 128, 256, 512]:
-                    for dropout_ in [0.5]: #[0.5, 0.6, 0.7, 0.8]:
+for n_conv_ in [2, 3]: # [1, 2, 3, 4, 5, 6]:
+    for n_lin_ in [2]: # [1, 2, 3, 4]:
+        for n_conv_hidden_ in [64]: # [32, 64, 128, 256]:
+            for n_edge_NN_ in [64]: # [32, 64, 128, 256]:
+                for n_lin_hidden_ in [64]: # [32, 64, 128, 256, 512]:
+                    for dropout_ in [0.5]: # [0.5, 0.6, 0.7, 0.8]:
                         configurations.append({'configuration_ID': configuration_ID, 'n_conv': n_conv_, 'n_lin': n_lin_, 'n_conv_hidden': n_conv_hidden_, 'n_edge_NN': n_edge_NN_, 'n_lin_hidden': n_lin_hidden_, 'dropout': dropout_})
                         configuration_ID += 1
 log.info(f'number of configurations: {len(configurations)}')
@@ -225,7 +225,6 @@ for i_outer in range(K_FOLD_OUTER):
             # train the model
             num_epochs = 5
             metrics_history = train_eval(net, train_loaders, eval_loaders, optimizer, loss_fn, scheduler, num_epochs, log_epoch_frequency=10)
-            metrics_history = pd.DataFrame(metrics_history)
 
             # plot the metrics
             outp = metrics_history_path/f'outer_fold_{i_outer}_configuration_ID_{configuration_ID}_inner_fold_{i_inner}'
@@ -233,6 +232,7 @@ for i_outer in range(K_FOLD_OUTER):
             plot_metrics(metrics_history, outp)
 
             # log the metrics for the training set and evaluation set
+            metrics_history = pd.DataFrame(metrics_history)
             cols = {'time': datetime.now(),
                     'outer fold': i_outer,
                     'configuration ID': configuration_ID,
@@ -253,7 +253,7 @@ for i_outer in range(K_FOLD_OUTER):
     # assert 1==0
 
     # find the optimal configuration by using the average eval f1 score over the inner folds (avoid reading the whole file in memory)
-    chunk_iterator = pd.read_csv(metrics_history_path, chunksize=10_000, sep='\t')
+    chunk_iterator = pd.read_csv(metrics_history_path/'metrics_history.tsv', chunksize=10_000, sep='\t')
     metrics_history_configuration = []
     for chunk in chunk_iterator:
         # .. select the eval rows that provide the aggregate metrics across tasks and batches
@@ -289,6 +289,7 @@ for i_outer in range(K_FOLD_OUTER):
         torch.cuda.manual_seed_all(PYTORCH_SEED)
     # set the model
     configuration = [configuration for configuration in configurations if configuration['configuration_ID'] == best_configuration_ID][0]
+    configuration_ID = configuration['configuration_ID']
     n_conv_ = configuration['n_conv']
     n_lin_ = configuration['n_lin']
     n_conv_hidden_ = configuration['n_conv_hidden']
@@ -311,7 +312,6 @@ for i_outer in range(K_FOLD_OUTER):
     # train the model
     num_epochs = 5
     metrics_history = train_eval(net, train_eval_loaders, test_loaders, optimizer, loss_fn, scheduler, num_epochs, log_epoch_frequency=10)
-    metrics_history = pd.DataFrame(metrics_history)
 
     # plot the metrics
     outp = metrics_history_path/f'outer_fold_{i_outer}_configuration_ID_{configuration_ID}'
@@ -319,6 +319,7 @@ for i_outer in range(K_FOLD_OUTER):
     plot_metrics(metrics_history, outp)
 
     # log the metrics for the training set and evaluation set
+    metrics_history = pd.DataFrame(metrics_history)
     cols = {'time': datetime.now(),
             'outer fold': i_outer,
             'configuration ID': configuration_ID,
@@ -329,16 +330,27 @@ for i_outer in range(K_FOLD_OUTER):
             'n_lin_hidden': n_lin_hidden_,
             'dropout': dropout_,
             'inner fold': None}
-    metrics_history['stage'] = np.where(metrics_history['stage']=='train', 'train+eval', 'test')
     for i_col, (col_name, col_value) in enumerate(cols.items()):
         metrics_history.insert(i_col, col_name, col_value)
+    metrics_history['stage'] = np.where(metrics_history['stage']=='train', 'train+eval', 'test')
 
     # append the results to the metric history log
     with open(metrics_history_path/'metrics_history.tsv', mode='at', encoding='utf-8', buffering=1, newline='') as f:
         metrics_history.to_csv(f, header=f.tell() == 0, index=False, sep='\t', lineterminator='\n')
 
 
-# ------------------------------------------------------------
+# retrieve the metrics for each outer iteration and list the optimal configuration for each outer iteration
+chunk_iterator = pd.read_csv(metrics_history_path/'metrics_history.tsv', chunksize=10_000, sep='\t')
+metrics_history_outer = []
+for chunk in chunk_iterator:
+    # .. select the train+eval and test rows
+    msk = (chunk['batch'].isnull()) & (chunk['task'].isnull()) & chunk['stage'].isin(['train+eval', 'test']) & (chunk['type'] == 'aggregate (epoch)')
+    metrics_history_outer.append(chunk.loc[msk])
+metrics_history_outer = pd.concat(metrics_history_outer, axis=0, sort=False, ignore_index=True)
+res = metrics_history_outer.pivot_table(index='outer fold', columns='stage', values=['accuracy', 'precision', 'recall', 'f1 score'], aggfunc='mean', margins=True)
+res.columns = ['_'.join(col).strip() for col in res.columns.values]
+res = res.drop([col for col in res.columns if col.endswith('_All')], axis='columns')
+res = res.merge(metrics_history_outer[['outer fold', 'configuration ID', 'n_conv', 'n_lin', 'n_conv_hidden', 'n_edge_NN', 'n_lin_hidden', 'dropout']].drop_duplicates().set_index('outer fold'), left_index=True, right_index=True, how='left')
 
 
 
@@ -346,7 +358,7 @@ for i_outer in range(K_FOLD_OUTER):
 
 
 
-
+# ------------------------------------------------------------ the plot below is for the configuration trials (it needs to be reworked as it was used with a simple train/eval split)
 converged_metrics_history = []
 for fpath in glob.glob(r'D:\myApplications\local\2024_01_21_GCN_Muta\output\*.xlsx'):
     log.info(f'processing {fpath}')
