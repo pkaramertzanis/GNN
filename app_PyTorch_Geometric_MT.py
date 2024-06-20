@@ -23,8 +23,10 @@ from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 
 from collections import Counter
+from itertools import product
 import random
 from datetime import datetime
+
 
 from sklearn.model_selection import StratifiedKFold
 
@@ -47,59 +49,81 @@ pd.set_option("max_colwidth", 250)
 # enable pandas copy-on-write
 pd.options.mode.copy_on_write = True
 
-
-PYTORCH_SEED = 1 # seed for PyTorch random number generator
-MINIMUM_TASK_DATASET = 256 # minimum number of data points for a task
-BATCH_SIZE_MAX = 256 # maximum batch size (largest task, the smaller tasks are scaled accordingly so the number of batches is the same)
-K_FOLD_INNER = 3 # number of folds for the inner cross-validation
-K_FOLD_OUTER = 3 # number of folds for the outer cross-validation
-NUM_EPOCHS = 3 # number of epochs
-
 # set the device
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
+# set general parameters
+PYTORCH_SEED = 1 # seed for PyTorch random number generator, it is also used for splits and shuffling to ensure reproducibility
+MINIMUM_TASK_DATASET = 256 # minimum number of data points for a task
+BATCH_SIZE_MAX = 256 # maximum batch size (largest task, the smaller tasks are scaled accordingly so the number of batches is the same)
+K_FOLD_INNER = 2 # number of folds for the inner cross-validation
+K_FOLD_OUTER = 2 # number of folds for the outer cross-validation
+NUM_EPOCHS = 3 # number of epochs
+DATASET_NAME = 'Leadscope' # name of the dataset
+MODEL_NAME = 'DMPNN_GCN' # name of the model, can be 'DMPNN_GCN' or 'Attentive_GCN'
+
+# location to store the metrics logs
+metrics_history_path = Path(rf'D:\myApplications\local\2024_01_21_GCN_Muta\output\iteration4')/DATASET_NAME
+metrics_history_path.mkdir(parents=True, exist_ok=True)
+
+# select model
+if MODEL_NAME == 'DMPNN_GCN':
+    model = DMPNN_GCN
+    model_parameters = {'n_conv': [2, 4], # [1, 2, 3, 4, 5, 6]
+                        'n_lin': [2], # [1, 2, 3, 4]
+                        'n_conv_hidden': [64], # [32, 64, 128, 256]
+                        'n_edge_NN': [64], # [32, 64, 128, 256]
+                        'n_lin_hidden': [64], # [32, 64, 128, 256, 512]
+                        'dropout': [0.5], # [0.5, 0.6, 0.7, 0.8]
+                        'activation_function': [torch.nn.functional.leaky_relu]
+                        }
+elif MODEL_NAME == 'Attentive_GCN':
+    pass # to be implemented
 
 
+# build the PyG datasets, no split at this stage
+if DATASET_NAME == 'Leadscope':
+    target_level = 'genotoxicity_assay_level'
+    tasks = ['in_vitro_chrom_ab_cho',
+              'hgprt_mut',
+              'mouse_lymphoma_act',
+              'mouse_lymphoma_unact',
+              'bacterial_mutation',
+              'salmonella_mut',
+              'in_vivo_micronuc_mouse',
+              'in_vitro_sce_cho',
+              'in_vitro_sce_comp',
+              'in_vivo_rodent_dl_mut',
+              'in_vivo_rodent_mut',
+              'in_vivo_chrom_ab_comp',
+              'in_vivo_chrom_ab_other',
+              'e_coli_sal_102_a_t_mut',
+              'in_vitro_chrom_ab_chl',
+              'in_vivo_chrom_ab_rat',
+              'in_vitro_sce_other']
+    dsets = {}
+    for task in tasks:
+        log.info(f'preparing dataset for task: {task}')
+        entry = {}
+        target_assay_endpoint = task
+        dset = PyG_Dataset(root=Path(rf'D:\myApplications\local\2024_01_21_GCN_Muta\datasets\Leadscope\processed\PyTorch_Geometric_{target_assay_endpoint.replace(" ", "_")}'),
+                           target_level=target_level, target_assay_endpoint=target_assay_endpoint, ambiguous_outcomes='ignore',
+                           force_reload=False,
+                           node_feats=['atom_symbol', 'atom_charge', 'atom_degree', 'atom_hybridization'],
+                           edge_feats=['bond_type', 'is_conjugated'],
+                           checker_ops = {'allowed_atoms': ['C', 'O', 'N', 'Cl', 'S', 'F', 'Br', 'P', 'B', 'Si', 'I', 'H']},
+                           standardiser_ops = ['cleanup', 'addHs']
+                           )
+        dset.to(device) # all datasets are moved to the device
+        # store the dataset in the dset dictionary
+        entry['dset'] = dset
+        if len(dset) >= MINIMUM_TASK_DATASET:
+            dsets[task] = entry
+        else:
+            log.warning(f'task {task} has less than {MINIMUM_TASK_DATASET} data points, skipping')
 
-# build the PyG datasets (no split at this stage)
-target_level = 'genotoxicity_assay_level'
-tasks = ['in_vitro_chrom_ab_cho',
-          'hgprt_mut',
-          'mouse_lymphoma_act',
-          'mouse_lymphoma_unact',
-          'bacterial_mutation',
-          'salmonella_mut',
-          'in_vivo_micronuc_mouse',
-          'in_vitro_sce_cho',
-          'in_vitro_sce_comp',
-          'in_vivo_rodent_dl_mut',
-          'in_vivo_rodent_mut',
-          'in_vivo_chrom_ab_comp',
-          'in_vivo_chrom_ab_other',
-          'e_coli_sal_102_a_t_mut',
-          'in_vitro_chrom_ab_chl',
-          'in_vivo_chrom_ab_rat',
-          'in_vitro_sce_other']
-dsets = {}
-for task in tasks:
-    log.info(f'preparing dataset for task: {task}')
-    entry = {}
-    target_assay_endpoint = task
-    dset = PyG_Dataset(root=Path(rf'D:\myApplications\local\2024_01_21_GCN_Muta\datasets\Leadscope\processed\PyTorch_Geometric_{target_assay_endpoint.replace(" ", "_")}'),
-                       target_level=target_level, target_assay_endpoint=target_assay_endpoint, ambiguous_outcomes='ignore',
-                       force_reload=False,
-                       node_feats=['atom_symbol', 'atom_charge', 'atom_degree', 'atom_hybridization'],
-                       edge_feats=['bond_type', 'is_conjugated'],
-                       checker_ops = {'allowed_atoms': ['C', 'O', 'N', 'Cl', 'S', 'F', 'Br', 'P', 'B', 'Si', 'I', 'H']},
-                       standardiser_ops = ['cleanup', 'addHs']
-                       )
-    dset.to(device) # all datasets are moved to the device
-    # store the dataset in the dset dictionary
-    entry['dset'] = dset
-    if len(dset) >= MINIMUM_TASK_DATASET:
-        dsets[task] = entry
-    else:
-        log.warning(f'task {task} has less than {MINIMUM_TASK_DATASET} data points, skipping')
+elif DATASET_NAME == 'Hansen':
+    pass # to be implemented
 
 
 
@@ -142,23 +166,20 @@ for task in dsets:
     log.info(f'task {task}, % positives in different splits\n{tmp}')
 
 
+
 # set up the model configurations
 configuration_ID = 0
 configurations = []
-for n_conv_ in [2, 3]: # [1, 2, 3, 4, 5, 6]:
-    for n_lin_ in [2]: # [1, 2, 3, 4]:
-        for n_conv_hidden_ in [64]: # [32, 64, 128, 256]:
-            for n_edge_NN_ in [64]: # [32, 64, 128, 256]:
-                for n_lin_hidden_ in [64]: # [32, 64, 128, 256, 512]:
-                    for dropout_ in [0.5]: # [0.5, 0.6, 0.7, 0.8]:
-                        configurations.append({'configuration_ID': configuration_ID, 'n_conv': n_conv_, 'n_lin': n_lin_, 'n_conv_hidden': n_conv_hidden_, 'n_edge_NN': n_edge_NN_, 'n_lin_hidden': n_lin_hidden_, 'dropout': dropout_})
-                        configuration_ID += 1
+for model_parameter_values in product(*model_parameters.values()):
+    configuration_ID += 1
+    configuration = {'configuration_ID': configuration_ID}
+    configuration.update(dict(zip(model_parameters.keys(), model_parameter_values)))
+    configurations.append(configuration)
 log.info(f'number of configurations: {len(configurations)}')
+# .. shuffle to sample the configurations randomly
 random.seed(PYTORCH_SEED)
 random.shuffle(configurations)
 
-# location to store the metrics logs
-metrics_history_path = Path(r'D:\myApplications\local\2024_01_21_GCN_Muta\output')
 
 # outer loop of the nested cross-validation
 for i_outer in range(K_FOLD_OUTER):
@@ -167,12 +188,7 @@ for i_outer in range(K_FOLD_OUTER):
     for i_configuration, configuration in enumerate(configurations, 0):
         configuration_ID = configuration['configuration_ID']
         log.info(f'Trialing model configuration {configuration_ID} ({i_configuration} out of {len(configurations)})')
-        n_conv_ = configuration['n_conv']
-        n_lin_ = configuration['n_lin']
-        n_conv_hidden_ = configuration['n_conv_hidden']
-        n_edge_NN_ = configuration['n_edge_NN']
-        n_lin_hidden_ = configuration['n_lin_hidden']
-        dropout_ = configuration['dropout']
+        model_parameters = {k: v for k, v in configuration.items() if k != 'configuration_ID'}
 
         # inner loop of the nested cross-validation
         metrics_history_configuration = []
@@ -196,35 +212,26 @@ for i_outer in range(K_FOLD_OUTER):
             # set up the model
             num_node_features = (train_loaders[0].dataset).num_node_features
             num_edge_features = (train_loaders[0].dataset).num_edge_features
-            n_conv = n_conv_  # n_conv = 3
-            n_edge_NN = n_edge_NN_  # n_edge_NN = 32
-            n_conv_hidden = 48  #
-            n_lin = n_lin_  # n_lin = 2
-            n_lin_hidden = n_lin_hidden_  # n_lin_hidden = 256
-            dropout = dropout_  # dropout = 0.5
-            activation_function = torch.nn.functional.leaky_relu
             n_classes = [2] * len(dsets)
             # set the seed for reproducibility
             torch.manual_seed(PYTORCH_SEED)
             if torch.cuda.is_available():
                 torch.cuda.manual_seed_all(PYTORCH_SEED)
             # set the model
-            net = DMPNN_GCN(num_node_features, num_edge_features,
-                            n_conv, n_edge_NN, n_conv_hidden,
-                            n_lin, n_lin_hidden,
-                            dropout, activation_function, n_classes)
+            net = DMPNN_GCN(num_node_features=num_node_features, num_edge_features=num_edge_features,
+                            **model_parameters,
+                            n_classes=n_classes)
             net.to(device)
             # optimiser
             optimizer = torch.optim.Adam(net.parameters(), lr=0.01, betas=[0.9, 0.999], eps=1e-08, weight_decay=0, amsgrad=False)
-            # loss function, default reduction is mean
+            # loss function, default reduction is mean, we treat the binary classification as a multi-class classification for generalisation
             loss_fn = torch.nn.CrossEntropyLoss(weight=torch.tensor([1., 1.]))
             # scheduler
             lambda_group = lambda epoch: 0.96 ** epoch
             scheduler = LambdaLR(optimizer, lr_lambda=[lambda_group])
 
             # train the model
-            num_epochs = 5
-            metrics_history = train_eval(net, train_loaders, eval_loaders, optimizer, loss_fn, scheduler, num_epochs, log_epoch_frequency=10)
+            metrics_history = train_eval(net, train_loaders, eval_loaders, optimizer, loss_fn, scheduler, NUM_EPOCHS, log_epoch_frequency=10)
 
             # plot the metrics
             outp = metrics_history_path/f'outer_fold_{i_outer}_configuration_ID_{configuration_ID}_inner_fold_{i_inner}'
@@ -233,16 +240,9 @@ for i_outer in range(K_FOLD_OUTER):
 
             # log the metrics for the training set and evaluation set
             metrics_history = pd.DataFrame(metrics_history)
-            cols = {'time': datetime.now(),
-                    'outer fold': i_outer,
-                    'configuration ID': configuration_ID,
-                    'n_conv' : n_conv_,
-                    'n_lin':  n_lin_,
-                    'n_conv_hidden': n_conv_hidden_,
-                    'n_edge_NN': n_edge_NN_,
-                    'n_lin_hidden': n_lin_hidden_,
-                    'dropout': dropout_,
-                    'inner fold': i_inner}
+            cols = {'time': datetime.now(), 'outer fold': i_outer}
+            cols.update(configuration)
+            cols.update({'inner fold': i_inner})
             for i_col, (col_name, col_value) in enumerate(cols.items()):
                 metrics_history.insert(i_col, col_name, col_value)
 
@@ -263,7 +263,7 @@ for i_outer in range(K_FOLD_OUTER):
     # .. keep the last three epochs
     msk = (metrics_history_configuration['epoch'] >= metrics_history_configuration['epoch'].max() - 3)
     metrics_history_configuration = metrics_history_configuration.loc[msk]
-    f1_eval_inner_folds = metrics_history_configuration.groupby('configuration ID')['f1 score'].mean()
+    f1_eval_inner_folds = metrics_history_configuration.groupby('configuration_ID')['f1 score'].mean()
     best_configuration_ID = f1_eval_inner_folds.idxmax()
     log.info(f'outer fold {i_outer}, best configuration ID: {best_configuration_ID} with f1 score: {f1_eval_inner_folds.max():.4} (range: {f1_eval_inner_folds.min():.4} - {f1_eval_inner_folds.max():.4})')
 
@@ -290,28 +290,21 @@ for i_outer in range(K_FOLD_OUTER):
     # set the model
     configuration = [configuration for configuration in configurations if configuration['configuration_ID'] == best_configuration_ID][0]
     configuration_ID = configuration['configuration_ID']
-    n_conv_ = configuration['n_conv']
-    n_lin_ = configuration['n_lin']
-    n_conv_hidden_ = configuration['n_conv_hidden']
-    n_edge_NN_ = configuration['n_edge_NN']
-    n_lin_hidden_ = configuration['n_lin_hidden']
-    dropout_ = configuration['dropout']
-    net = DMPNN_GCN(num_node_features, num_edge_features,
-                    n_conv, n_edge_NN, n_conv_hidden,
-                    n_lin, n_lin_hidden,
-                    dropout, activation_function, n_classes)
+    model_parameters = {k: v for k, v in configuration.items() if k != 'configuration_ID'}
+    net = DMPNN_GCN(num_node_features=num_node_features, num_edge_features=num_edge_features,
+                    **model_parameters,
+                    n_classes=n_classes)
     net.to(device)
     # optimiser
     optimizer = torch.optim.Adam(net.parameters(), lr=0.01, betas=[0.9, 0.999], eps=1e-08, weight_decay=0,
                                  amsgrad=False)
-    # loss function, default reduction is mean
+    # loss function, default reduction is mean, we treat the binary classification as a multi-class classification for generalisation
     loss_fn = torch.nn.CrossEntropyLoss(weight=torch.tensor([1., 1.]))
     # scheduler
     lambda_group = lambda epoch: 0.96 ** epoch
     scheduler = LambdaLR(optimizer, lr_lambda=[lambda_group])
-    # train the model
-    num_epochs = 5
-    metrics_history = train_eval(net, train_eval_loaders, test_loaders, optimizer, loss_fn, scheduler, num_epochs, log_epoch_frequency=10)
+    # train the model, double the number of epochs for the final training
+    metrics_history = train_eval(net, train_eval_loaders, test_loaders, optimizer, loss_fn, scheduler, 2*NUM_EPOCHS, log_epoch_frequency=10)
 
     # plot the metrics
     outp = metrics_history_path/f'outer_fold_{i_outer}_configuration_ID_{configuration_ID}'
@@ -320,16 +313,9 @@ for i_outer in range(K_FOLD_OUTER):
 
     # log the metrics for the training set and evaluation set
     metrics_history = pd.DataFrame(metrics_history)
-    cols = {'time': datetime.now(),
-            'outer fold': i_outer,
-            'configuration ID': configuration_ID,
-            'n_conv': n_conv_,
-            'n_lin': n_lin_,
-            'n_conv_hidden': n_conv_hidden_,
-            'n_edge_NN': n_edge_NN_,
-            'n_lin_hidden': n_lin_hidden_,
-            'dropout': dropout_,
-            'inner fold': None}
+    cols = {'time': datetime.now(), 'outer fold': i_outer}
+    cols.update(configuration)
+    cols.update({'inner fold': None})
     for i_col, (col_name, col_value) in enumerate(cols.items()):
         metrics_history.insert(i_col, col_name, col_value)
     metrics_history['stage'] = np.where(metrics_history['stage']=='train', 'train+eval', 'test')
@@ -350,55 +336,7 @@ metrics_history_outer = pd.concat(metrics_history_outer, axis=0, sort=False, ign
 res = metrics_history_outer.pivot_table(index='outer fold', columns='stage', values=['accuracy', 'precision', 'recall', 'f1 score'], aggfunc='mean', margins=True)
 res.columns = ['_'.join(col).strip() for col in res.columns.values]
 res = res.drop([col for col in res.columns if col.endswith('_All')], axis='columns')
-res = res.merge(metrics_history_outer[['outer fold', 'configuration ID', 'n_conv', 'n_lin', 'n_conv_hidden', 'n_edge_NN', 'n_lin_hidden', 'dropout']].drop_duplicates().set_index('outer fold'), left_index=True, right_index=True, how='left')
+res = res.merge(metrics_history_outer[['outer fold', 'configuration_ID', 'n_conv', 'n_lin', 'n_conv_hidden', 'n_edge_NN', 'n_lin_hidden', 'dropout']].drop_duplicates().set_index('outer fold'), left_index=True, right_index=True, how='left')
+res.to_excel(metrics_history_path/'metrics_history_outer.xlsx')
 
 
-
-
-
-
-
-# ------------------------------------------------------------ the plot below is for the configuration trials (it needs to be reworked as it was used with a simple train/eval split)
-converged_metrics_history = []
-for fpath in glob.glob(r'D:\myApplications\local\2024_01_21_GCN_Muta\output\*.xlsx'):
-    log.info(f'processing {fpath}')
-    metrics_history = pd.read_excel(fpath)
-    msk = (metrics_history['epoch'] == metrics_history['epoch'].max()) & metrics_history['batch'].isnull() & metrics_history['task'].isnull() & (metrics_history['type']=='aggregate (epoch)')
-    converged_metrics_history.append(metrics_history[msk])
-converged_metrics_history = pd.concat(converged_metrics_history, axis='index', ignore_index=True, sort=False)
-# sort the configurations according to the test f1 score (ascending)
-# converged_metrics_history = converged_metrics_history.sort_values(by='configuration ID', ascending=True)
-converged_metrics_history_test = converged_metrics_history.loc[converged_metrics_history['stage'] == 'test']
-ordered_configuration_IDs = converged_metrics_history_test[['configuration ID', 'f1 score']].sort_values(by='f1 score', ascending=True)['configuration ID'].to_list()
-converged_metrics_history = pd.concat([converged_metrics_history.loc[converged_metrics_history['stage']=='train'].set_index('configuration ID').reindex(ordered_configuration_IDs).reset_index(),
-                                       converged_metrics_history.loc[converged_metrics_history['stage']=='test'].set_index('configuration ID').reindex(ordered_configuration_IDs).reset_index()],
-                                      axis='index', sort=False, ignore_index=True)
-cols = ['n_conv', 'n_lin', 'n_conv_hidden', 'n_edge_NN', 'n_lin_hidden', 'dropout', 'f1 score', 'stage']
-fig = plt.figure(figsize=(12, 6))
-axs = fig.subplots(len(cols)-1, 1, sharex=True)
-fig.subplots_adjust(hspace=0.4)  # Increase horizontal and vertical space
-msk_train = converged_metrics_history['stage'] == 'train'
-idx = list(range(msk_train.sum()))
-axs[0].scatter(idx, converged_metrics_history.loc[msk_train, 'f1 score'], marker='o', alpha=0.5, edgecolors='k', facecolor='k', label='train')
-axs[0].scatter(idx, converged_metrics_history.loc[~msk_train, 'f1 score'], marker='o', alpha=0.5, edgecolors='r', facecolor='r', label='test')
-axs[0].hlines(0.8, 0, msk_train.sum(), colors='k', linestyles='dotted', label='80%', linewidth=0.5)
-axs[0].hlines(0.85, 0, msk_train.sum(), colors='k', linestyles='dotted', label='85%', linewidth=0.5)
-axs[0].hlines(0.90, 0, msk_train.sum(), colors='k', linestyles='dotted', label='90%', linewidth=0.5)
-axs[0].legend(loc='upper left', fontsize=6, frameon=False, ncols=3)
-f1_scores_train = converged_metrics_history.loc[msk_train,  'f1 score'].to_list()
-f1_scores_test = converged_metrics_history.loc[~msk_train,  'f1 score'].to_list()
-# for i in range(len(f1_scores_test)):
-#     value = max(f1_scores_train[i], f1_scores_test[i])
-#     axs[0].annotate(f'{f1_scores_test[i]: 0.3f}', xy=(i, value), xycoords='data', textcoords="data", xytext=(i, value+0.05), va='center', ha='center', fontsize=6, rotation=90)
-axs[0].set_ylim(0.65, 1)
-axs[0].spines['top'].set_visible(False)
-axs[0].spines['right'].set_visible(False)
-axs[0].set_title('f1 score', fontsize=6)
-msk_train = converged_metrics_history['stage'] == 'train'
-for i_col, col in enumerate(['n_conv', 'n_lin', 'n_conv_hidden', 'n_edge_NN', 'n_lin_hidden', 'dropout'], 1):
-    axs[i_col].scatter(idx, converged_metrics_history.loc[msk_train, col], marker='o', alpha=1, edgecolors='k', facecolor='k')
-    axs[i_col].set_title(col, fontsize=6)
-    axs[i_col].spines['top'].set_visible(False)
-    axs[i_col].spines['right'].set_visible(False)
-plt.show()
-fig.savefig(r'D:\myApplications\local\2024_01_21_GCN_Muta\output\configuration_trials.png', dpi=600)

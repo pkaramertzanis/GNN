@@ -5,7 +5,7 @@ from typing import Callable
 
 import torch
 import torch.nn as nn
-from torch_geometric.nn import NNConv, global_add_pool
+from torch_geometric.nn import NNConv, global_add_pool, AttentiveFP
 
 class Attentive_GCN(torch.nn.Module):
     def __init__(self,
@@ -28,9 +28,9 @@ class Attentive_GCN(torch.nn.Module):
 # num_edge_features = dset.num_edge_features
 # n_classes = 2
 # from torch_geometric.nn.models import AttentiveFP
-# net = AttentiveFP(in_channels=num_node_features, hidden_channels=200, out_channels=n_classes,
-#                     edge_dim=num_edge_features, num_layers=2, num_timesteps=2,
-#                     dropout=0.1)
+ net = AttentiveFP(in_channels=num_node_features, hidden_channels=200, out_channels=n_classes,
+                     edge_dim=num_edge_features, num_layers=2, num_timesteps=2,
+                     dropout=0.1)
 # net.to(device)
 #
 # # number of epochs

@@ -51,6 +51,8 @@ def plot_metrics(metrics_history: dict, output: Path):
     ax.legend()
     fig.tight_layout()
     fig.savefig(output / 'loss_overall.png', dpi=600)
+    plt.close(fig)
+
 
     # loss for train and eval set for each task
     fig = plt.figure(figsize=(10, 6))
@@ -70,6 +72,8 @@ def plot_metrics(metrics_history: dict, output: Path):
         ax.tick_params(axis='both', which='major', labelsize=6)
     fig.tight_layout()
     fig.savefig(output / 'loss_task.png', dpi=600)
+    plt.close(fig)
+
 
     # overall accuracy, precision, recall and F1-score
     msk = df['batch'].isnull() & df['task'].isnull() & (df['type'] == 'aggregate (epoch)') & (df['stage'] == 'train')
@@ -93,6 +97,7 @@ def plot_metrics(metrics_history: dict, output: Path):
     ax.tick_params(axis='both', which='major', labelsize=6)
     fig.tight_layout()
     fig.savefig(output / 'metrics_overall.png', dpi=600)
+    plt.close(fig)
 
     # accuracy, precision, recall and F1-score for each task
     fig = plt.figure(figsize=(10, 6))
@@ -119,6 +124,8 @@ def plot_metrics(metrics_history: dict, output: Path):
         ax.tick_params(axis='both', which='major', labelsize=6)
     fig.tight_layout()
     fig.savefig(output / 'metrics_task.png', dpi=600)
+    plt.close(fig)
+
 
     plt.interactive(True)
 
