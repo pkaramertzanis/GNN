@@ -59,7 +59,7 @@ BATCH_SIZE_MAX = 256 # maximum batch size (largest task, the smaller tasks are s
 K_FOLD_INNER = 2 # number of folds for the inner cross-validation
 K_FOLD_OUTER = 2 # number of folds for the outer cross-validation
 NUM_EPOCHS = 3 # number of epochs
-DATASET_NAME = 'Leadscope' # name of the dataset
+DATASET_NAME = 'Hansen_2009' # name of the dataset, can be 'Leadscope' or 'Hansen_2009'
 MODEL_NAME = 'DMPNN_GCN' # name of the model, can be 'DMPNN_GCN' or 'Attentive_GCN'
 
 # location to store the metrics logs
@@ -122,8 +122,29 @@ if DATASET_NAME == 'Leadscope':
         else:
             log.warning(f'task {task} has less than {MINIMUM_TASK_DATASET} data points, skipping')
 
-elif DATASET_NAME == 'Hansen':
-    pass # to be implemented
+elif DATASET_NAME == 'Hansen_2009':
+    target_level = 'genotoxicity_assay_level'
+    tasks = ['bacterial_mutation',]
+    dsets = {}
+    for task in tasks:
+        log.info(f'preparing dataset for task: {task}')
+        entry = {}
+        target_assay_endpoint = task
+        dset = PyG_Dataset(root=Path(rf'D:\myApplications\local\2024_01_21_GCN_Muta\datasets\Hansen_2009\processed\PyTorch_Geometric_{target_assay_endpoint.replace(" ", "_")}'),
+                           target_level=target_level, target_assay_endpoint=target_assay_endpoint, ambiguous_outcomes='ignore',
+                           force_reload=False,
+                           node_feats=['atom_symbol', 'atom_charge', 'atom_degree', 'atom_hybridization'],
+                           edge_feats=['bond_type', 'is_conjugated'],
+                           checker_ops = {'allowed_atoms': ['C', 'O', 'N', 'Cl', 'S', 'F', 'Br', 'P', 'B', 'Si', 'I', 'H']},
+                           standardiser_ops = ['cleanup', 'addHs']
+                           )
+        dset.to(device) # all datasets are moved to the device
+        # store the dataset in the dset dictionary
+        entry['dset'] = dset
+        if len(dset) >= MINIMUM_TASK_DATASET:
+            dsets[task] = entry
+        else:
+            log.warning(f'task {task} has less than {MINIMUM_TASK_DATASET} data points, skipping')
 
 
 

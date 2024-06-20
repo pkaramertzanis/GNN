@@ -58,7 +58,7 @@ def plot_metrics(metrics_history: dict, output: Path):
     fig = plt.figure(figsize=(10, 6))
     n_tasks = df['task'].dropna().nunique()
     axs = fig.subplots(math.ceil(n_tasks/3), 3, sharex=True, sharey=True)
-    for i_task, ax in enumerate(axs.flatten()):
+    for i_task, ax in enumerate(axs.flatten()[slice(n_tasks)]):
         msk = df['batch'].isnull() & df['task'].notnull() & (df['type'] == 'aggregate (epoch)') & (df['stage'] == 'train') & (df['task'] == i_task)
         loss_train = df.loc[msk, ['epoch', 'task', 'loss (mean)']]
         msk = df['batch'].isnull() & df['task'].notnull() & (df['type'] == 'aggregate (epoch)') & (df['stage'] == 'eval') & (df['task'] == i_task)
@@ -103,7 +103,7 @@ def plot_metrics(metrics_history: dict, output: Path):
     fig = plt.figure(figsize=(10, 6))
     n_tasks = df['task'].dropna().nunique()
     axs = fig.subplots(math.ceil(n_tasks/3), 3, sharex=True, sharey=True)
-    for i_task, ax in enumerate(axs.flatten()):
+    for i_task, ax in enumerate(axs.flatten()[slice(n_tasks)]):
         msk = df['batch'].isnull() & df['task'].notnull() & (df['type'] == 'aggregate (epoch)') & (df['stage'] == 'train') & (df['task'] == i_task)
         metrics_train = df.loc[msk, ['epoch', 'task', 'number of datapoints', 'accuracy', 'precision', 'recall', 'f1 score']]
         msk = df['batch'].isnull() & df['task'].notnull() & (df['type'] == 'aggregate (epoch)') & (df['stage'] == 'eval') & (df['task'] == i_task)

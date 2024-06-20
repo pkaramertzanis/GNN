@@ -137,12 +137,11 @@ assay_results = assay_results.merge(tmp, on='smiles (canonical)', how='left')
 # store the tabular data
 outf = Path(r'datasets\Leadscope\processed\tabular')
 outf.mkdir(parents=True, exist_ok=True)
-assay_results.to_excel(outf / 'Leadscope_genotoxicity.xlsx', index=False)
 log.info('stored assay results in ' + str(outf / 'Leadscope_genotoxicity.xlsx'))
 with pd.ExcelWriter(outf / 'Leadscope_genotoxicity.xlsx', engine='openpyxl') as writer:
     # detailed
-    assay_results.to_excel(writer, sheet_name='genotoxicity detailed (valid)')
-    # summary (assay level)
+    assay_results.to_excel(writer, sheet_name='genotoxicity detailed')
+    # summary (assay level), this eliminates records with null smiles (canonical)
     tmp_cas = assay_results.groupby('smiles (canonical)')['CAS number'].unique().rename('CAS number').apply(lambda x: '; '.join(sorted(x))).reset_index()
     tmp = assay_results.copy()
     tmp['genotoxicity'] = assay_results['genotoxicity'].replace({1.0: 'positive', 0.0: 'negative'})
@@ -155,7 +154,7 @@ with pd.ExcelWriter(outf / 'Leadscope_genotoxicity.xlsx', engine='openpyxl') as 
     cols = [col for col in assay_results_assay.columns if col != ('molecule ID', '') and  col != ('smiles (canonical)', '') ]
     assay_results_assay = assay_results_assay.melt(id_vars=[('molecule ID', ''), ('smiles (canonical)','')], value_vars=cols, value_name='genotoxicity').rename({('smiles (canonical)',''): 'smiles (canonical)', ('molecule ID', ''): 'molecule ID'}, axis='columns').rename({('smiles (canonical)',''):'smiles (canonical)'}, axis='columns')
 
-    # summary (endpoint level)
+    # summary (endpoint level), this eliminates records with null smiles (canonical)
     tmp_cas = assay_results.groupby('smiles (canonical)')['CAS number'].unique().rename('CAS number').apply(lambda x: '; '.join(sorted(x))).reset_index()
     tmp = assay_results.copy()
     tmp['genotoxicity'] = assay_results['genotoxicity'].replace({1.0: 'positive', 0.0: 'negative'})
