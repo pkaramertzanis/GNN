@@ -31,6 +31,8 @@ from datetime import datetime
 from sklearn.model_selection import StratifiedKFold
 
 from models.DMPNN_GCN.DMPNN_GCN import DMPNN_GCN
+from models.Attentive_GCN.Attentive_GCN import Attentive_GCN
+
 from models.metrics import plot_metrics
 from models.train import train_eval
 
@@ -59,8 +61,8 @@ BATCH_SIZE_MAX = 256 # maximum batch size (largest task, the smaller tasks are s
 K_FOLD_INNER = 2 # number of folds for the inner cross-validation
 K_FOLD_OUTER = 2 # number of folds for the outer cross-validation
 NUM_EPOCHS = 3 # number of epochs
-DATASET_NAME = 'Hansen_2009' # name of the dataset, can be 'Leadscope' or 'Hansen_2009'
-MODEL_NAME = 'DMPNN_GCN' # name of the model, can be 'DMPNN_GCN' or 'Attentive_GCN'
+DATASET_NAME = 'Leadscope' # name of the dataset, can be 'Leadscope' or 'Hansen_2009'
+MODEL_NAME = 'Attentive_GCN' # name of the model, can be 'DMPNN_GCN' or 'Attentive_GCN'
 
 # location to store the metrics logs
 metrics_history_path = Path(rf'D:\myApplications\local\2024_01_21_GCN_Muta\output\iteration4')/DATASET_NAME
@@ -78,7 +80,12 @@ if MODEL_NAME == 'DMPNN_GCN':
                         'activation_function': [torch.nn.functional.leaky_relu]
                         }
 elif MODEL_NAME == 'Attentive_GCN':
-    pass # to be implemented
+    model = Attentive_GCN
+    model_parameters = {'hidden_channels': [128], # [64, 128, 256]
+                        'num_layers': [2], # [1, 2, 3, 4]
+                        'num_timesteps': [2], # [1, 2, 3, 4]
+                        'dropout': [0.5], # [0.5, 0.6, 0.7, 0.8]
+                        }
 
 
 # build the PyG datasets, no split at this stage
@@ -239,7 +246,7 @@ for i_outer in range(K_FOLD_OUTER):
             if torch.cuda.is_available():
                 torch.cuda.manual_seed_all(PYTORCH_SEED)
             # set the model
-            net = DMPNN_GCN(num_node_features=num_node_features, num_edge_features=num_edge_features,
+            net = model(num_node_features=num_node_features, num_edge_features=num_edge_features,
                             **model_parameters,
                             n_classes=n_classes)
             net.to(device)
@@ -270,8 +277,6 @@ for i_outer in range(K_FOLD_OUTER):
             # append the results to the metric history log
             with open(metrics_history_path/'metrics_history.tsv', mode='at', encoding='utf-8', buffering=1, newline='') as f:
                 metrics_history.to_csv(f, header=f.tell()==0, index=False, sep='\t', lineterminator='\n')
-
-    # assert 1==0
 
     # find the optimal configuration by using the average eval f1 score over the inner folds (avoid reading the whole file in memory)
     chunk_iterator = pd.read_csv(metrics_history_path/'metrics_history.tsv', chunksize=10_000, sep='\t')
@@ -312,7 +317,7 @@ for i_outer in range(K_FOLD_OUTER):
     configuration = [configuration for configuration in configurations if configuration['configuration_ID'] == best_configuration_ID][0]
     configuration_ID = configuration['configuration_ID']
     model_parameters = {k: v for k, v in configuration.items() if k != 'configuration_ID'}
-    net = DMPNN_GCN(num_node_features=num_node_features, num_edge_features=num_edge_features,
+    net = model(num_node_features=num_node_features, num_edge_features=num_edge_features,
                     **model_parameters,
                     n_classes=n_classes)
     net.to(device)
@@ -357,7 +362,7 @@ metrics_history_outer = pd.concat(metrics_history_outer, axis=0, sort=False, ign
 res = metrics_history_outer.pivot_table(index='outer fold', columns='stage', values=['accuracy', 'precision', 'recall', 'f1 score'], aggfunc='mean', margins=True)
 res.columns = ['_'.join(col).strip() for col in res.columns.values]
 res = res.drop([col for col in res.columns if col.endswith('_All')], axis='columns')
-res = res.merge(metrics_history_outer[['outer fold', 'configuration_ID', 'n_conv', 'n_lin', 'n_conv_hidden', 'n_edge_NN', 'n_lin_hidden', 'dropout']].drop_duplicates().set_index('outer fold'), left_index=True, right_index=True, how='left')
+res = res.merge(metrics_history_outer[['outer fold', 'configuration_ID']+list(model_parameters.keys())].drop_duplicates().set_index('outer fold'), left_index=True, right_index=True, how='left')
 res.to_excel(metrics_history_path/'metrics_history_outer.xlsx')
 
 
