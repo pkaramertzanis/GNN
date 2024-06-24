@@ -82,7 +82,8 @@ def plot_metrics(metrics_history: dict, output: Path):
     metrics_eval = df.loc[msk, ['epoch', 'accuracy', 'precision', 'recall', 'f1 score']]
     fig = plt.figure(figsize=(10, 6))
     ax = fig.subplots()
-    ax.hlines(0.8, 0, len(metrics_train), colors='k', linestyles='dashed', label='80%', linewidth=0.5)
+    ax.hlines(0.8, 0, metrics_train['epoch'].max(), colors='y', linestyles='-', label='80%', linewidth=0.5)
+    ax.hlines(0.85, 0, metrics_train['epoch'].max(), colors='y', linestyles='-', label='85%', linewidth=0.5)
     ax.plot(metrics_train['epoch'], metrics_train['accuracy'], label='accuracy (train)', c='b', linewidth=0.5)
     ax.plot(metrics_eval['epoch'], metrics_eval['accuracy'], label='accuracy (eval)', c='b', linestyle='dashed', linewidth=0.5)
     ax.plot(metrics_train['epoch'], metrics_train['precision'], label='precision (train)', c='r', linewidth=0.5)
@@ -108,7 +109,8 @@ def plot_metrics(metrics_history: dict, output: Path):
         metrics_train = df.loc[msk, ['epoch', 'task', 'number of datapoints', 'accuracy', 'precision', 'recall', 'f1 score']]
         msk = df['batch'].isnull() & df['task'].notnull() & (df['type'] == 'aggregate (epoch)') & (df['stage'] == 'eval') & (df['task'] == i_task)
         metrics_eval = df.loc[msk, ['epoch', 'task', 'number of datapoints', 'accuracy', 'precision', 'recall', 'f1 score']]
-        ax.hlines(0.8, 0, len(metrics_train), colors='k', linestyles='dashed', label='80%', linewidth=0.5)
+        ax.hlines(0.8, 0, metrics_train['epoch'].max(), colors='y', linestyles='-', label='80%', linewidth=0.5)
+        ax.hlines(0.85, 0, metrics_train['epoch'].max(), colors='y', linestyles='-', label='85%', linewidth=0.5)
         ax.plot(metrics_train['epoch'], metrics_train['accuracy'], label='accuracy (train)', c='b', linewidth=0.5)
         ax.plot(metrics_eval['epoch'], metrics_eval['accuracy'], label='accuracy (eval)', c='b', linestyle='dashed', linewidth=0.5)
         ax.plot(metrics_train['epoch'], metrics_train['precision'], label='precision (train)', c='r', linewidth=0.5)
