@@ -10,6 +10,7 @@ standardise with the default cleanup operation and calculate a non-empty canonic
 The xlsx output file contains the assay results in a tabular format.
 
 The sdf output file contains one mol block for each unique canonical smiles. The assay results are stored as a json dump.
+We include the results at the assay level and at the endpoint level after aggregating and checking for conflicts.
 
 A script like this will be created for each dataset that is used in the project. This script can be seen as a standalone,
 run-once utility script.
@@ -58,27 +59,28 @@ datapoint_ID = 0
 assay_results = []
 for index, row in tox_data.iterrows():
     assay_result = {'datapoint ID': datapoint_ID}
-    assay_result['assay'] = 'bacterial_mutation'
-    assay_result['endpoint'] = 'endpoint: gene mutation, mammalian, in vitro'
+    assay_result['assay'] = 'bacterial reverse mutation assay'
+    assay_result['endpoint'] = 'in vitro gene mutation study in bacteria'
     assay_result['parsing notes'] = []
     smiles = row['smiles']
     mol, error_warning = convert_smiles_to_mol(smiles, sanitize=False)
-    if mol is None:
+    if mol is not None:
         mol = rdMolStandardize.Cleanup(mol)  # default rdKit cleanup
         assay_result['parsing notes'].append('parsing initial SMILES: ' + error_warning)
     else:
         log.info(f'could not read molecule {index} from {inpf}')
 
     # standardise and compute the InChi and InChiKey
-    with Rdkit_operation() as sio:
-        smiles = Chem.MolToSmiles(mol).strip()  # canonical smiles
-        error_warning = sio.getvalue()
-    if error_warning:
-        assay_result['parsing notes'].append('parsing molecule in rdKit: ' + error_warning)
-    if pd.isnull(smiles) or len(smiles) == 0:
-        smiles = None
-        assay_result['parsing notes'].append('empty smiles')
-    assay_result['smiles (canonical)'] = smiles
+    if mol:
+        with Rdkit_operation() as sio:
+            smiles = Chem.MolToSmiles(mol).strip()  # canonical smiles
+            error_warning = sio.getvalue()
+        if error_warning:
+            assay_result['parsing notes'].append('parsing molecule in rdKit: ' + error_warning)
+        if pd.isnull(smiles) or len(smiles) == 0:
+            smiles = None
+            assay_result['parsing notes'].append('empty smiles')
+        assay_result['smiles (canonical)'] = smiles
 
     # fetch the CAS number
     assay_result['CAS number'] = row['cas_number']

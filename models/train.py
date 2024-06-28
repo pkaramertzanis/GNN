@@ -1,3 +1,5 @@
+import numpy as np
+
 import logger
 log = logger.get_logger(__name__)
 
@@ -41,6 +43,7 @@ def train_eval(net: DMPNN_GCN,
                loss_fn: torch.nn.modules.loss._Loss,
                scheduler: torch.optim.lr_scheduler.LRScheduler,
                num_epochs: int,
+               outp: Path,
                log_epoch_frequency: int = 10,
                metrics_history = None):
     """
@@ -52,9 +55,10 @@ def train_eval(net: DMPNN_GCN,
     :param optimizer: PyTorch optimizer
     :param loss_fn: PyTorch loss function
     :param scheduler: PyTorch learning rate scheduler
+    :param outp: Path to store the model weights every log_epoch_frequency epochs, if None model weights are not stored
     :param num_epochs: number of epochs
     :param log_epoch_frequency: log the metrics every so many epochs
-    :param metrics_history: list with metrics history
+    :param metrics_history: list with metrics history to append to, if None, a new list is created
     :return:
     """
     # metrics history, continue from the previous run if not None
@@ -212,6 +216,31 @@ def train_eval(net: DMPNN_GCN,
                 metrics_epoch.append(tmp)
 
             metrics_history.extend(metrics_epoch)
+
+            # store the model weights
+            if outp is not None:
+                weight_values = [w_value for w_name in net.state_dict() for w_value in net.state_dict()[w_name].cpu().numpy().flatten()]
+                if i_epoch > 0:
+                    # with open(outp, 'ta') as f:
+                    weight_abs_diff = np.abs(np.array(weight_values) - np.array(weight_values_previous))
+                    weight_abs_diff_quantiles = np.quantile(weight_abs_diff, np.arange(0.01, 1, 0.01))
+                    with open(outp, 'ta') as f:
+                        f.write('\n' + '\t'.join([f'{diff:0.5}' for diff in weight_abs_diff_quantiles]))
+                else:
+                    with open(outp, 'ta') as f:
+                        f.write('\t'.join([f'{quant:0.5}' for quant in np.arange(0.01, 1, 0.01)]))
+                weight_values_previous = weight_values
+
+                #
+                # weight_values_previous = None if i_epoch == 0 else weight_values
+                #
+                #
+                # with open(outp, 'ta') as f:
+                #     if i_epoch == 0:
+                #         weight_names = '\t'.join([w_name for w_name in net.state_dict().keys()])
+                #         f.write(weight_names)
+                #     weight_values = '\n' + '\t'.join([f'{w_value:0.5}' for w_name in net.state_dict() for w_value in net.state_dict()[w_name].cpu().numpy().flatten()])
+                #     f.write(weight_values)
 
     return metrics_history
 

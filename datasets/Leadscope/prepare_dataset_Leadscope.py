@@ -10,6 +10,7 @@ standardise with the default cleanup operation and calculate a non-empty canonic
 The xlsx output file contains the assay results in a tabular format.
 
 The sdf output file contains one mol block for each unique canonical smiles. The assay results are stored as a json dump.
+We include the results at the assay level and at the endpoint level after aggregating and checking for conflicts.
 
 A script like this will be created for each dataset that is used in the project. This script can be seen as a standalone,
 run-once utility script.
@@ -51,11 +52,13 @@ pd.options.mode.copy_on_write = True
 with open(r'datasets/Leadscope/raw/2024_05_20/datasets.yaml', 'r') as inf:
     datasets = yaml.safe_load(inf)
 
+# skip the datasets that are not to be processed
+datasets = {k: v for k, v in datasets.items() if v['process']}
 
 # read in the Leadscope datasets and add the mols to the datasets dictionary
 for dataset in datasets:
-    log.info(f'reading dataset {dataset}')
     dataset_info = datasets[dataset]
+    log.info(f'reading dataset {dataset}')
     inp_sdf = Path(dataset_info['sdf'])
     mols = []
     with open(inp_sdf, 'rt', encoding='cp1252') as inf:
@@ -63,14 +66,12 @@ for dataset in datasets:
             with Chem.ForwardSDMolSupplier(BytesIO(inf.read().encode('utf-8'))) as suppl:
                 for i_mol, mol in enumerate(suppl):
                     if mol is not None:
-                        mol = rdMolStandardize.Cleanup(mol)  # default rdKit cleanup
-                        mols.append(mol)
+                         mol = rdMolStandardize.Cleanup(mol)  # default rdKit cleanup
+                         mols.append(mol)
                     else:
-                        log.info(f'could not read molecule {i_mol} from {inp_sdf}')
+                         log.info(f'could not read molecule {i_mol} from {inp_sdf}')
     log.info('read ' + str(len(mols)) + ' molecules from ' + str(inp_sdf))
     datasets[dataset]['mols'] = mols
-
-
 
 # first pass through the datasets to examine if
 # -- the needed fields are present

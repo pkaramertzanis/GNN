@@ -59,15 +59,22 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 PYTORCH_SEED = 1 # seed for PyTorch random number generator, it is also used for splits and shuffling to ensure reproducibility
 MINIMUM_TASK_DATASET = 256 # minimum number of data points for a task
 BATCH_SIZE_MAX = 512 # maximum batch size (largest task, the smaller tasks are scaled accordingly so the number of batches is the same)
-K_FOLD_INNER = 2 # number of folds for the inner cross-validation
-K_FOLD_OUTER = 2 # number of folds for the outer cross-validation
-NUM_EPOCHS = 3 # number of epochs
+K_FOLD_INNER = 5 # number of folds for the inner cross-validation
+K_FOLD_OUTER = 10 # number of folds for the outer cross-validation
+NUM_EPOCHS = 150 # number of epochs
 DATASET_NAME = 'Leadscope' # name of the dataset, can be 'Leadscope' or 'Hansen_2009'
 MODEL_NAME = 'Attentive_GCN' # name of the model, can be 'DMPNN_GCN' or 'Attentive_GCN'
+LOG_EPOCH_FREQUENCY = 10 # frequency to log the metrics during training
 
 # location to store the metrics logs
-metrics_history_path = Path(rf'D:\myApplications\local\2024_01_21_GCN_Muta\output\iteration8')/DATASET_NAME/MODEL_NAME
+metrics_history_path = Path(rf'D:\myApplications\local\2024_01_21_GCN_Muta\output\iteration14')/DATASET_NAME/MODEL_NAME
 metrics_history_path.mkdir(parents=True, exist_ok=True)
+
+# features, checkers and standardisers
+NODE_FEATS = ['atom_symbol', 'atom_charge', 'atom_degree', 'atom_hybridization']
+EDGE_FEATS = ['bond_type', 'is_conjugated', 'stereo_type']
+CHECKER_OPS = {'allowed_atoms': ['C', 'O', 'N', 'Cl', 'S', 'F', 'Br', 'P', 'B', 'Si', 'I', 'H']}
+STANDARDISER_OPS = ['cleanup', 'addHs'] # ['cleanup', 'addHs']
 
 # select model
 if MODEL_NAME == 'DMPNN_GCN':
@@ -79,16 +86,16 @@ if MODEL_NAME == 'DMPNN_GCN':
                         'n_lin_hidden': [64], # [32, 64, 128, 256, 512]
                         'dropout': [0.5], # [0.5, 0.6, 0.7, 0.8]
                         'activation_function': [torch.nn.functional.leaky_relu],
-                        'learning_rate': [0.005],  # [0.001, 0.005, 0.01]
+                        'learning_rate': [0.01],  # [0.001, 0.005, 0.01]
                         'weight_decay': [1.e-5],  # [1.e-5, 1e-4, 1e-3]
                         }
 elif MODEL_NAME == 'Attentive_GCN':
     model = Attentive_GCN
     model_parameters = {'hidden_channels': [256], # [64, 128, 256]
-                        'num_layers': [2], # [1, 2, 3, 4]
-                        'num_timesteps': [2], # [1, 2, 3, 4]
+                        'num_layers': [3], # [1, 2, 3, 4]
+                        'num_timesteps': [3], # [1, 2, 3, 4]
                         'dropout': [0.5], # [0.5, 0.6, 0.7, 0.8]
-                        'learning_rate': [0.005], # [0.001, 0.005, 0.01]
+                        'learning_rate': [0.01], # [0.001, 0.005, 0.01]
                         'weight_decay': [1.e-5],  # [1.e-5, 1e-4, 1e-3]
                         }
 
@@ -96,23 +103,14 @@ elif MODEL_NAME == 'Attentive_GCN':
 # build the PyG datasets, no split at this stage
 if DATASET_NAME == 'Leadscope':
     target_level = 'genotoxicity_assay_level'
-    tasks = ['in_vitro_chrom_ab_cho',
-              'hgprt_mut',
-              'mouse_lymphoma_act',
-              'mouse_lymphoma_unact',
-              'bacterial_mutation',
-              'salmonella_mut',
-              'in_vivo_micronuc_mouse',
-              'in_vitro_sce_cho',
-              'in_vitro_sce_comp',
-              'in_vivo_rodent_dl_mut',
-              'in_vivo_rodent_mut',
-              'in_vivo_chrom_ab_comp',
-              'in_vivo_chrom_ab_other',
-              'e_coli_sal_102_a_t_mut',
-              'in_vitro_chrom_ab_chl',
-              'in_vivo_chrom_ab_rat',
-              'in_vitro_sce_other']
+    tasks = ['in vitro mammalian cell gene mutation test using the Hprt and xprt genes',
+             'in vitro mammalian cell gene mutation tests using the thymidine kinase gene',
+             'bacterial reverse mutation assay',
+             'in vitro mammalian chromosome aberration test',
+             'in vitro DNA damage and_or repair study',
+             'rodent dominant lethal assay',
+             'mammalian bone marrow chromosome aberration test',
+             'mammalian erythrocyte micronucleus test']
     dsets = {}
     for task in tasks:
         log.info(f'preparing dataset for task: {task}')
@@ -121,10 +119,10 @@ if DATASET_NAME == 'Leadscope':
         dset = PyG_Dataset(root=Path(rf'D:\myApplications\local\2024_01_21_GCN_Muta\datasets\Leadscope\processed\PyTorch_Geometric_{target_assay_endpoint.replace(" ", "_")}'),
                            target_level=target_level, target_assay_endpoint=target_assay_endpoint, ambiguous_outcomes='ignore',
                            force_reload=False,
-                           node_feats=['atom_symbol', 'atom_charge', 'atom_degree', 'atom_hybridization'],
-                           edge_feats=['bond_type', 'is_conjugated'],
-                           checker_ops = {'allowed_atoms': ['C', 'O', 'N', 'Cl', 'S', 'F', 'Br', 'P', 'B', 'Si', 'I', 'H']},
-                           standardiser_ops = ['cleanup', 'addHs']
+                           node_feats=NODE_FEATS,
+                           edge_feats=EDGE_FEATS,
+                           checker_ops=CHECKER_OPS,
+                           standardiser_ops=STANDARDISER_OPS
                            )
         dset.to(device) # all datasets are moved to the device
         # store the dataset in the dset dictionary
@@ -136,7 +134,7 @@ if DATASET_NAME == 'Leadscope':
 
 elif DATASET_NAME == 'Hansen_2009':
     target_level = 'genotoxicity_assay_level'
-    tasks = ['bacterial_mutation',]
+    tasks = ['bacterial reverse mutation assay']
     dsets = {}
     for task in tasks:
         log.info(f'preparing dataset for task: {task}')
@@ -145,10 +143,10 @@ elif DATASET_NAME == 'Hansen_2009':
         dset = PyG_Dataset(root=Path(rf'D:\myApplications\local\2024_01_21_GCN_Muta\datasets\Hansen_2009\processed\PyTorch_Geometric_{target_assay_endpoint.replace(" ", "_")}'),
                            target_level=target_level, target_assay_endpoint=target_assay_endpoint, ambiguous_outcomes='ignore',
                            force_reload=False,
-                           node_feats=['atom_symbol', 'atom_charge', 'atom_degree', 'atom_hybridization'],
-                           edge_feats=['bond_type', 'is_conjugated'],
-                           checker_ops = {'allowed_atoms': ['C', 'O', 'N', 'Cl', 'S', 'F', 'Br', 'P', 'B', 'Si', 'I', 'H']},
-                           standardiser_ops = ['cleanup', 'addHs']
+                           node_feats=NODE_FEATS,
+                           edge_feats=EDGE_FEATS,
+                           checker_ops=CHECKER_OPS,
+                           standardiser_ops=STANDARDISER_OPS
                            )
         dset.to(device) # all datasets are moved to the device
         # store the dataset in the dset dictionary
@@ -273,14 +271,15 @@ for i_outer in range(K_FOLD_OUTER):
             scheduler = LambdaLR(optimizer, lr_lambda=[lambda_group])
 
             # train the model
-            metrics_history = train_eval(net, train_loaders, eval_loaders, optimizer, loss_fn, scheduler, NUM_EPOCHS, log_epoch_frequency=10)
+            outp = metrics_history_path/f'outer_fold_{i_outer}_configuration_ID_{configuration_ID}_inner_fold_{i_inner}'
+            outp.mkdir(parents=True, exist_ok=True)
+            metrics_history = train_eval(net, train_loaders, eval_loaders, optimizer, loss_fn, scheduler, NUM_EPOCHS, outp/'model_weights_diff_quantiles.tsv', log_epoch_frequency=LOG_EPOCH_FREQUENCY)
 
 # -------------
 
             # plot the metrics
-            outp = metrics_history_path/f'outer_fold_{i_outer}_configuration_ID_{configuration_ID}_inner_fold_{i_inner}'
-            outp.mkdir(parents=True, exist_ok=True)
             plot_metrics(metrics_history, outp)
+
 
             # log the metrics for the training set and evaluation set
             metrics_history = pd.DataFrame(metrics_history)
@@ -347,13 +346,17 @@ for i_outer in range(K_FOLD_OUTER):
     # scheduler
     lambda_group = lambda epoch: 0.97 ** epoch
     scheduler = LambdaLR(optimizer, lr_lambda=[lambda_group])
-    # train the model, double the number of epochs for the final training
-    metrics_history = train_eval(net, train_eval_loaders, test_loaders, optimizer, loss_fn, scheduler, 2*NUM_EPOCHS, log_epoch_frequency=10)
 
-    # plot the metrics
+    # train the model, double the number of epochs for the final training
     outp = metrics_history_path/f'outer_fold_{i_outer}_configuration_ID_{configuration_ID}'
     outp.mkdir(parents=True, exist_ok=True)
+    metrics_history = train_eval(net, train_eval_loaders, test_loaders, optimizer, loss_fn, scheduler, 2*NUM_EPOCHS, outp=None, log_epoch_frequency=LOG_EPOCH_FREQUENCY)
+
+    # plot the metrics
     plot_metrics(metrics_history, outp)
+
+    # save the model
+    torch.save(net, outp/'model.pth')
 
     # log the metrics for the training set and evaluation set
     metrics_history = pd.DataFrame(metrics_history)
