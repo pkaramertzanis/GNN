@@ -7,7 +7,7 @@ from tqdm import tqdm
 import json
 
 from cheminformatics.rdkit_toolkit import get_node_features, get_edge_features, get_adjacency_info
-from cheminformatics.rdkit_toolkit import read_sdf, standardise_mol
+from cheminformatics.rdkit_toolkit import read_sdf, check_mol, standardise_mol
 
 import torch
 from torch_geometric.data import InMemoryDataset
@@ -19,28 +19,39 @@ class PyG_Dataset(InMemoryDataset):
     PyTorch Geometric dataset class. Modified from https://pytorch-geometric.readthedocs.io/en/latest/tutorial/create_dataset.html
     to allow setting the following parameters in the initialisation:
     - root: location where the input sdf file can be found
-    - target_level: "genotoxicity_assay_level" or "genotoxicity_endpoint_level" corresponding to the assay (most granular) or endpoint level (least granular)
-    - target_assay_endpoint: the target assay or endpoint name
+    - task: the task to model
     - ambiguous_outcomes: 'ignore' (default), 'set_negative', 'set_positive' to handle ambiguous outcomes
     - force_reload: boolean to force re-processing of the sdf file even if PyTorch Geometric can find the processed file 'data.pt'
       in the root folder
-      - node_feats: list of node features to be used in the graph, for now it supports 'atom_symbol', 'atom_charge', 'atom_degree', 'atom_hybridization'
-      - edge_feats: list of edge features to be used in the graph, for now it supports 'bond_type'
-    - checker_ops: dictionary with checker operations
-    - standardiser_ops: list of standardiser operations
+    - node_feats: list of node features to be used in the graph
+    - edge_feats: list of edge features to be used in the graph
+
+    The sdf file should be in the expected format that is ensured by the data.combine.create_sdf function. In particular, the mol
+    block should contain the field genotoxocity, an example of which is
+
+    [{"smiles_std":"C#CC1(O)CCC2C3CCc4cc(O)ccc4C3CCC21C", "task aggregation":"in vitro\/in vivo, endpoint, assay",
+      "task":"in vitro,.. aberration test", "CAS number":"57-63-6",
+      "source record ID":"QSAR Toolbox, Genotoxicity & Carcinogenicity ECVAM database 89339",
+      "genotoxicity":"ambiguous"},
+
+      {"smiles_std":"C#CC1(O)CCC2C3CCc4cc(O)ccc4C3CCC21C", "task aggregation":"in vitro\/in vivo, endpoint, assay",
+       "task":"in vitro, in vitro gene mutation study in bacteria, bacterial reverse mutation assay", "CAS number":"57-63-6",
+       "source record ID":"Hansen 2009 4416, QSAR Toolbox, Bacterial mutagenicity ISSSTY database 27486",
+       "genotoxicity":"negative"}]
+
+    As the example shows, the same mol block could contribute to more than one task. The task to model is set in the task parameter.
+    Genotoxicity can only be "positive", "negative" and "ambiguous".
     '''
-    def __init__(self, root, transform=None, pre_transform=None, pre_filter=None,
-                 target_level=None, target_assay_endpoint=None, ambiguous_outcomes='ignore',
-                 force_reload=False,
-                 node_feats=['atom_symbol', 'atom_charge', 'atom_degree', 'atom_hybridization'],
-                 edge_feats=['bond_type'],
-                 checker_ops={'allowed_atoms': ['C', 'O', 'N', 'Cl', 'S', 'F', 'Br', 'P', 'B','Si', 'I', 'H']},
-                 standardiser_ops=['cleanup', 'addHs']
+    def __init__(self, root,
+                 task,
+                 node_feats,
+                 edge_feats,
+                 transform=None, pre_transform=None, pre_filter=None,
+                 ambiguous_outcomes='ignore',
+                 force_reload=False
                  ):
 
-        # set the target assay or endpoint
-        self.target_level = target_level
-        self.target_assay_endpoint = target_assay_endpoint
+        self.task = task
         self.ambiguous_outcomes = ambiguous_outcomes
 
         # set the node and edge features
@@ -48,12 +59,6 @@ class PyG_Dataset(InMemoryDataset):
         log.info('node features used: ' + str(self.node_feats))
         self.edge_feats = edge_feats
         log.info('edge features used: ' + str(self.edge_feats))
-
-        # set the checker and standardiser operations
-        self.checker_ops = checker_ops
-        log.info('checker operations: ' + str(self.checker_ops))
-        self.standardiser_ops = standardiser_ops
-        log.info('standardiser operations: ' + str(self.standardiser_ops))
 
         super().__init__(root, transform, pre_transform, pre_filter, force_reload=force_reload)
         self.load(self.processed_paths[0])
@@ -95,29 +100,6 @@ class PyG_Dataset(InMemoryDataset):
         # read the sdf file with the raw data
         mols = read_sdf(self.raw_file_names[0])
 
-        # check and standarddise molecules, some molecules will be removed
-        mols_std = []
-        for i_mol in range(len(mols)):
-            # filter out molecules with no edges, this is a requirement for using graphs and is applied by default
-            if not mols[i_mol].GetNumBonds():
-                log.info(f'skipping molecule {i_mol} because it has no bonds')
-                continue
-            # filter out molecules with rare atoms
-            if 'allowed_atoms' in self.checker_ops:
-                not_allowed_atoms = [atom.GetSymbol() for atom in mols[i_mol].GetAtoms() if atom.GetSymbol() not in self.checker_ops['allowed_atoms']]
-                if not_allowed_atoms:
-                    log.info(f'skipping molecule {i_mol} because it contains not allowed atoms: {dict(Counter(not_allowed_atoms))}')
-                    continue
-            # standardise the molecule
-            mol_std, info_error_warning = standardise_mol(mols[i_mol], ops=self.standardiser_ops)
-            if mol_std is not None:
-                mols_std.append(mol_std)
-            else:
-                log.info(f'skipping molecule {i_mol} because it could not be standardised ({info_error_warning})')
-                continue
-        log.info(f'following checking and standardisation {len(mols_std)} molecules remain out of the starting {len(mols)} molecules')
-        mols = mols_std
-
 
         # collect the adjacency information, the node features, the edge features and the assay_results
         adjacency_info = []
@@ -138,6 +120,7 @@ class PyG_Dataset(InMemoryDataset):
         for col in one_hot_encode_node_cols:
             log.info(f'categorical node feature {col} counts: {one_hot_encode_node_cols[col]}')
 
+
         # categorical edge features and their counts
         tmp = pd.concat(edge_features, axis='index', ignore_index=True)
         one_hot_encode_edge_cols = tmp.select_dtypes(include=['object', 'int']).columns.to_list()
@@ -145,7 +128,7 @@ class PyG_Dataset(InMemoryDataset):
         for col in one_hot_encode_edge_cols:
             log.info(f'categorical edge feature {col} counts: {one_hot_encode_edge_cols[col]}')
 
-        # Read data into huge `Data` list.
+        # Read data into Data list
         data_list = []
         for i_mol in range(len(mols)):
 
@@ -181,24 +164,17 @@ class PyG_Dataset(InMemoryDataset):
             edge_attr = torch.tensor(edge_attr.to_numpy(), dtype=torch.float)
 
             # obtain the genotoxicity outcome
-            if self.target_level == 'genotoxicity_assay_level':
-                tmp = mols[i_mol].GetProp(self.target_level)
-                tmp = json.loads(tmp)
-                tmp = pd.DataFrame(tmp)
-                msk = tmp['assay'] == self.target_assay_endpoint
-                assay_data = tmp.loc[msk, 'genotoxicity'].iloc[0]
-                molecule_ID = tmp.loc[msk, 'molecule ID'].iloc[0]
-            elif self.target_level == 'genotoxicity_endpoint_level':
-                tmp = mols[i_mol].GetProp(self.target_level)
-                tmp = json.loads(tmp)
-                tmp = pd.DataFrame(tmp)
-                msk = tmp['endpoint'] == self.target_assay_endpoint
-                assay_data = tmp.loc[msk, 'genotoxicity'].iloc[0]
-                molecule_ID = tmp.loc[msk, 'molecule ID'].iloc[0]
-            else:
-                ex = ValueError(f'target_level can only be "genotoxicity_assay_level", or "genotoxicity_endpoint_level", but was set to {self.target_level}')
-                log.error(ex)
-                raise ex
+            tmp = mols[i_mol].GetProp('genotoxicity')
+            tmp = json.loads(tmp)
+            tmp = pd.DataFrame(tmp)
+            msk = tmp['task'] == self.task
+
+            if msk.sum() == 0:
+                log.info(f'skipping molecule {i_mol} because of missing task {self.task}')
+                continue
+            assay_data = tmp.loc[msk, 'genotoxicity'].iloc[0]
+            molecule_ID = tmp.loc[msk, 'source record ID'].iloc[0]
+
             if assay_data == 'ambiguous':
                 if self.ambiguous_outcomes == 'ignore':
                     log.info(f'skipping molecule {i_mol} because of ambiguous outcome')

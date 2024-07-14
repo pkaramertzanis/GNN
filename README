@@ -1,0 +1,132 @@
+Dataset preparation
+-------------------
+
+The folder data contains one folder per source of data. For example, the folder data/Hansen_2009 contains the Ames dataset
+from Hansen et al. 2009, whilst the folder data/QSARToolbox contains the genotoxicity data from several databases in the
+QSAR Toolbox. For each source there is a python script, named as {soource}_flatten.py the purpose of which is to convert
+each raw input data source into a flat excel file of fixed structures, with the following columns:
+
+- record ID
+- source
+- raw input file
+- CAS number
+- substance name
+- smiles
+- in vitro/in vivo
+- endpoint
+- assay
+- cell line/species
+- metabolic activation
+- genotoxicity mode of action
+- gene
+- notes
+- genotoxicity
+- reference
+- additional source data
+
+Each source requires its own flattening script because the raw data format varies. However, once the flat datasets are
+produced, they can be handled in the same way. Please note that the flattening scripts do not do any molecular structure
+checking and standardisation, other than ensuring that a SMILES string is included in the flat dataset. The molecular
+structure checking and standardisation is done in the next step. In order to ensure that all sources are expressed in a
+consistent way, the endpoint and assay for both in vitro and in vivo genotoxicity tests are standardised using their values
+in the corresponding OECD harmonised templates (OHT 70 and 71, picklists endpoint and type of assay,
+https://iuclid6.echa.europa.eu/format).
+
+The function data.combine.create_sdf loads the provided flat files and produces a single sdf file that is suitable for building
+models. This function also checks the molecular structures for errors and standardises them. The created sdf file contains
+one mol block for each unique molecular structures across all data. The function accepts as input the level of aggregation
+for multitask modelling. As an example, if the user provides the task aggregation columns (task_aggregation_cols):
+- in vitro/in vivo
+- endpoint
+- assay
+
+the genotoxicity calls will be aggregated across all
+- cell line/species
+- metabolic activation
+- genotoxicity mode of action
+- gene
+
+for the same values in the task aggregation columns. At one extreme level of aggragation, one can model in vitro and in
+vivo genotoxicity. Amuch more granular model would include each AMES strain separately (the strain is recorded in the
+cell line/species column).
+
+The user can select to filter out any record that has the value "unknown" in any of the task aggregation columns.
+
+
+
+Fitting the model
+---------------------------------------
+The model fitting, including the nested cross validation is carried out by execuing the script app_model_fitting.py.
+The user needs to set the following.
+
+First the user needs to specify which flat datasets to use.
+flat_datasets = [
+                r'data/Hansen_2009/tabular/Hansen_2009_genotoxicity.xlsx',
+                # r'data/Leadscope/tabular/Leadscope_genotoxicity.xlsx',
+                r'data/QSARToolbox/tabular/QSARToolbox_genotoxicity.xlsx'
+                ]
+In the example above, we use the Hansen 2009 and QSAR Toolbox data. The commercial Leadscope data are not included
+in the repo, but if the the user has a licence thi source can be included too, given that the provided Leadscope_flatten.py
+script is executed first.
+
+The user then needs to specify the task aggregation columns in order to produce the sdf file that will be used for modelling.
+task_aggregation_cols = ['in vitro/in vivo', 'endpoint', 'assay']
+outp_sdf = Path(r'data/combined/sdf/genotoxicity_dataset.sdf')
+outp_tab = Path(r'data/combined/tabular/genotoxicity_dataset.sdf')
+tasks = create_sdf(flat_datasets = flat_datasets,
+                   filter_unknown = False,
+                   task_aggregation_cols = task_aggregation_cols,
+                   outp_sdf = outp_sdf,
+                   outp_tab = outp_tab)
+
+The user needs then to set up the following general parameters
+PYTORCH_SEED = 1 # seed for PyTorch random number generator, it is also used for splits and shuffling to ensure reproducibility
+MINIMUM_TASK_DATASET = 256 # minimum number of data points for a task
+BATCH_SIZE_MAX = 512 # maximum batch size (largest task, the smaller tasks are scaled accordingly so the number of batches is the same)
+K_FOLD_INNER = 5 # number of folds for the inner cross-validation
+K_FOLD_OUTER = 10 # number of folds for the outer cross-validation
+NUM_EPOCHS = 150 # number of epochs
+MODEL_NAME = 'Attentive_GCN' # name of the model, can be 'DMPNN_GCN' or 'Attentive_GCN'
+LOG_EPOCH_FREQUENCY = 10 # frequency to log the metrics during training
+
+Finally the user needs to select where to store the results of the modelling, which node and edge features to use, and
+the range of the model parameters for the hyperparameter tuning. The user can select between the DMPNN_GCN and the
+Attentive_GCN models.
+
+# location to store the metrics logs
+metrics_history_path = Path(rf'D:\myApplications\local\2024_01_21_GCN_Muta\output\iteration23')/MODEL_NAME
+metrics_history_path.mkdir(parents=True, exist_ok=True)
+
+# features, checkers and standardisers
+NODE_FEATS = ['atom_symbol', 'atom_charge', 'atom_degree', 'atom_hybridization', 'num_rings']
+EDGE_FEATS = ['bond_type', 'is_conjugated', 'num_rings'] # ['bond_type', 'is_conjugated', 'stereo_type']
+
+# select model
+if MODEL_NAME == 'DMPNN_GCN':
+    model = DMPNN_GCN
+    model_parameters = {'n_conv': [6], # [1, 2, 3, 4, 5, 6]
+                        'n_lin': [2], # [1, 2, 3, 4]
+                        'n_conv_hidden': [64], # [32, 64, 128, 256]
+                        'n_edge_NN': [64], # [32, 64, 128, 256]
+                        'n_lin_hidden': [64], # [32, 64, 128, 256, 512]
+                        'dropout': [0.5], # [0.5, 0.6, 0.7, 0.8]
+                        'activation_function': [torch.nn.functional.leaky_relu],
+                        'learning_rate': [0.01],  # [0.001, 0.005, 0.01]
+                        'weight_decay': [1.e-5],  # [1.e-5, 1e-4, 1e-3]
+                        }
+elif MODEL_NAME == 'Attentive_GCN':
+    model = Attentive_GCN
+    model_parameters = {'hidden_channels': [256], # [64, 128, 256]
+                        'num_layers': [3], # [1, 2, 3, 4]
+                        'num_timesteps': [3], # [1, 2, 3, 4]
+                        'dropout': [0.1], # [0.5, 0.6, 0.7, 0.8]
+                        'learning_rate': [0.005], # [0.001, 0.005, 0.01]
+                        'weight_decay': [1.e-5],  # [1.e-5, 1e-4, 1e-3]
+                        }
+
+The rest of the scripts carries out the nested cross validation.
+
+Using the model for making predictions
+---------------------------------------
+
+To be provided.

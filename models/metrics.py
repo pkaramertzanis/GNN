@@ -22,6 +22,8 @@ def compute_metrics(tp, tn, fp, fn) -> dict:
     precision = tp / (tp + fp) if (tp + fp) > 0 else 0
     recall = tp / (tp + fn) if (tp + fn) > 0 else 0
     f1_score = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
+
+
     metrics = {'tp': tp, 'tn': tn, 'fp': fp, 'fn': fn,
                'accuracy': accuracy, 'precision': precision, 'recall': recall, 'f1 score': f1_score}
     return metrics
