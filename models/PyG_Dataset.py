@@ -20,7 +20,7 @@ class PyG_Dataset(InMemoryDataset):
     to allow setting the following parameters in the initialisation:
     - root: location where the input sdf file can be found
     - task: the task to model
-    - ambiguous_outcomes: 'ignore' (default), 'set_negative', 'set_positive' to handle ambiguous outcomes
+    - ambiguous_outcomes: 'ignore' (default), 'set_negative', 'set_positive', 'keep' to handle ambiguous outcomes
     - force_reload: boolean to force re-processing of the sdf file even if PyTorch Geometric can find the processed file 'data.pt'
       in the root folder
     - node_feats: list of node features to be used in the graph
@@ -183,8 +183,10 @@ class PyG_Dataset(InMemoryDataset):
                     assay_data = 'negative'
                 elif self.ambiguous_outcomes == 'set_positive':
                     assay_data = 'positive'
+                elif self.ambiguous_outcomes == 'keep':
+                    pass
                 else:
-                    ex = ValueError(f'ambiguous_outcomes can only be "ignore", "set_negative", or "set_positive", but was set to {self.ambiguous_outcomes}')
+                    ex = ValueError(f'ambiguous_outcomes can only be "ignore", "set_negative", or "set_positive", or "keep" but was set to {self.ambiguous_outcomes}')
                     log.error(ex)
                     raise ex
             elif assay_data == 'not available':

@@ -28,16 +28,21 @@ def compute_metrics(tp, tn, fp, fn) -> dict:
                'accuracy': accuracy, 'precision': precision, 'recall': recall, 'f1 score': f1_score}
     return metrics
 
-def plot_metrics(metrics_history: dict, output: Path):
+def plot_metrics(metrics_history: dict, output: Path, drop_first_epoch=True):
     """
     Plot the metrics history
     :param metrics_history: list with metrics history dictionaries for training and validation for each epoch
     :param output: output file path
+    :param drop_first_epoch: drop the first epoch from the plot
     :return:
     """
     plt.interactive(False)
 
     df = pd.DataFrame(metrics_history)
+
+    if drop_first_epoch:
+        msk = df['epoch'] > 0
+        df = df.loc[msk].copy()
 
     # overall loss for train and eval set
     msk = df['batch'].isnull() & df['task'].isnull() & (df['type'] == 'aggregate (epoch)') & (df['stage'] == 'train')

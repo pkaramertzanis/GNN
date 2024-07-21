@@ -5,8 +5,11 @@ import random
 import logger
 log = logger.setup_applevel_logger(file_name ='logs/GNN_muta_model.log')
 
-from pathlib import Path
+# import and configure pandas globally
 import pandas as pd
+import pandas_config
+
+from pathlib import Path
 import numpy as np
 
 import torch
@@ -39,29 +42,14 @@ from models.Attentive_GCN.Attentive_GCN import Attentive_GCN
 from models.metrics import plot_metrics
 from models.train import train_eval
 
-# pandas display options
-# do not fold dataframes
-pd.set_option('expand_frame_repr', False)
-# maximum number of columns
-pd.set_option("display.max_columns",50)
-# maximum number of rows
-pd.set_option("display.max_rows",500)
-# precision of float numbers
-pd.set_option("display.precision",3)
-# maximum column width
-pd.set_option("max_colwidth", 250)
-
-# enable pandas copy-on-write
-pd.options.mode.copy_on_write = True
-
 # set the device
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 # set up the dataset
 flat_datasets = [
-                #r'data/Hansen_2009/tabular/Hansen_2009_genotoxicity.xlsx',
+                # r'data/Hansen_2009/tabular/Hansen_2009_genotoxicity.xlsx',
                 r'data/Leadscope/tabular/Leadscope_genotoxicity.xlsx',
-                #r'data/QSARToolbox/tabular/QSARToolbox_genotoxicity.xlsx'
+                # r'data/QSARToolbox/tabular/QSARToolbox_genotoxicity.xlsx'
                 ]
 task_aggregation_cols = ['in vitro/in vivo', 'endpoint', 'assay']
 outp_sdf = Path(r'data/combined/sdf/genotoxicity_dataset.sdf')
@@ -80,14 +68,16 @@ MINIMUM_TASK_DATASET = 256 # minimum number of data points for a task
 BATCH_SIZE_MAX = 512 # maximum batch size (largest task, the smaller tasks are scaled accordingly so the number of batches is the same)
 K_FOLD_INNER = 5 # number of folds for the inner cross-validation
 K_FOLD_OUTER = 10 # number of folds for the outer cross-validation
-NUM_EPOCHS = 150 # number of epochs
+NUM_EPOCHS = 50 # number of epochs
 MODEL_NAME = 'Attentive_GCN' # name of the model, can be 'DMPNN_GCN' or 'Attentive_GCN'
+SCALE_LOSS = 'equal task' # how to scale the loss function, can be 'equal task' or None
+HANDLE_AMBIGUOUS = 'ignore' # how to handle ambiguous outcomes, can be 'keep', 'set_positive', 'set_negative' or 'ignore', but the model fitting does not support 'keep'
 LOG_EPOCH_FREQUENCY = 10 # frequency to log the metrics during training
 
 
 
 # location to store the metrics logs
-metrics_history_path = Path(rf'D:\myApplications\local\2024_01_21_GCN_Muta\output\iteration23')/MODEL_NAME
+metrics_history_path = Path(rf'D:\myApplications\local\2024_01_21_GCN_Muta\output\iteration34')/MODEL_NAME
 metrics_history_path.mkdir(parents=True, exist_ok=True)
 
 # features, checkers and standardisers
@@ -97,9 +87,9 @@ EDGE_FEATS = ['bond_type', 'is_conjugated', 'num_rings'] # ['bond_type', 'is_con
 # select model
 if MODEL_NAME == 'DMPNN_GCN':
     model = DMPNN_GCN
-    model_parameters = {'n_conv': [6], # [1, 2, 3, 4, 5, 6]
+    model_parameters = {'n_conv': [5], # [1, 2, 3, 4, 5, 6]
                         'n_lin': [2], # [1, 2, 3, 4]
-                        'n_conv_hidden': [64], # [32, 64, 128, 256]
+                        'n_conv_hidden': [128], # [32, 64, 128, 256]
                         'n_edge_NN': [64], # [32, 64, 128, 256]
                         'n_lin_hidden': [64], # [32, 64, 128, 256, 512]
                         'dropout': [0.5], # [0.5, 0.6, 0.7, 0.8]
@@ -109,12 +99,12 @@ if MODEL_NAME == 'DMPNN_GCN':
                         }
 elif MODEL_NAME == 'Attentive_GCN':
     model = Attentive_GCN
-    model_parameters = {'hidden_channels': [256], # [64, 128, 256]
-                        'num_layers': [3], # [1, 2, 3, 4]
-                        'num_timesteps': [3], # [1, 2, 3, 4]
-                        'dropout': [0.1], # [0.5, 0.6, 0.7, 0.8]
+    model_parameters = {'hidden_channels': [128], # [64, 128, 256]
+                        'num_layers': [2], # [1, 2, 3, 4]
+                        'num_timesteps': [2], # [1, 2, 3, 4]
+                        'dropout': [0.0], # [0.5, 0.6, 0.7, 0.8]
                         'learning_rate': [0.005], # [0.001, 0.005, 0.01]
-                        'weight_decay': [1.e-5],  # [1.e-5, 1e-4, 1e-3]
+                        'weight_decay': [1e-3],  # [1.e-5, 1e-4, 1e-3]
                         }
 
 
@@ -127,7 +117,7 @@ for i_task, task in enumerate(tasks):
                        task=task,
                        node_feats=NODE_FEATS,
                        edge_feats=EDGE_FEATS,
-                       ambiguous_outcomes='ignore',
+                       ambiguous_outcomes=HANDLE_AMBIGUOUS,
                        force_reload=True,
                        )
     dset.to(device) # all datasets are moved to the device
@@ -156,11 +146,13 @@ for task in dsets:
     for i_outer, (tmp_indices, test_indices) in enumerate(cv_outer.split(range(len(dset)), y=y_task)):
         y_outer_test = [d.assay_data for i, d in enumerate(dset) if i in test_indices]
         y_outer_test_dist = dict(Counter(y_outer_test))
-        per_pos_test =100 * y_outer_test_dist['positive'] / len(y_outer_test)
+        per_pos_test = 100 * y_outer_test_dist['positive'] / len(y_outer_test)
         log.info(f"task {task}, outer fold {i_outer}, test set: {len(y_outer_test):4d} data points, positives: {y_outer_test_dist['positive']:4d} ({per_pos_test:.2f}%)")
 
         y_inner = [d.assay_data for i, d in enumerate(dset) if i in tmp_indices]
         for i_inner, (train_indices, evaluate_indices) in enumerate(cv_inner.split(range(len(tmp_indices)), y=y_inner)):
+            train_indices = np.array([tmp_indices[i] for i in train_indices])
+            evaluate_indices = np.array([tmp_indices[i] for i in evaluate_indices])
             y_inner_train = [d.assay_data for i, d in enumerate(dset) if i in train_indices]
             y_inner_train_dist = dict(Counter(y_inner_train))
             per_pos_inner_train = 100 * y_inner_train_dist['positive'] / len(y_inner_train)
@@ -172,12 +164,13 @@ for task in dsets:
                      'train # data points': len(train_indices),
                      'task %positives': per_pos_task,
                      'test %positives': per_pos_test,
-                     'train %positives': per_pos_inner_train}
+                     'train %positives': per_pos_inner_train,
+                     }
             splits.append(entry)
 splits = pd.DataFrame(splits)
 for task in dsets:
     tmp = splits.loc[splits['task']==task, ['task %positives', 'test %positives', 'train %positives']].describe().loc[['min', 'max']].to_markdown()
-    log.info(f'task {task}, % positives in different splits\n{tmp}')
+    log.info(f'task {task}, %positives in different splits\n{tmp}')
 
 
 
@@ -256,7 +249,7 @@ for i_outer in range(K_FOLD_OUTER):
             # train the model
             outp = metrics_history_path/f'outer_fold_{i_outer}_configuration_ID_{configuration_ID}_inner_fold_{i_inner}'
             outp.mkdir(parents=True, exist_ok=True)
-            metrics_history = train_eval(net, train_loaders, eval_loaders, optimizer, loss_fn, scheduler, NUM_EPOCHS, outp/'model_weights_diff_quantiles.tsv', log_epoch_frequency=LOG_EPOCH_FREQUENCY)
+            metrics_history = train_eval(net, train_loaders, eval_loaders, optimizer, loss_fn, scheduler, NUM_EPOCHS, outp/'model_weights_diff_quantiles.tsv', log_epoch_frequency=LOG_EPOCH_FREQUENCY, scale_loss=SCALE_LOSS)
 
 # -------------
 
@@ -333,7 +326,7 @@ for i_outer in range(K_FOLD_OUTER):
     # train the model, double the number of epochs for the final training
     outp = metrics_history_path/f'outer_fold_{i_outer}_configuration_ID_{configuration_ID}'
     outp.mkdir(parents=True, exist_ok=True)
-    metrics_history = train_eval(net, train_eval_loaders, test_loaders, optimizer, loss_fn, scheduler, 2*NUM_EPOCHS, outp=None, log_epoch_frequency=LOG_EPOCH_FREQUENCY)
+    metrics_history = train_eval(net, train_eval_loaders, test_loaders, optimizer, loss_fn, scheduler, 2*NUM_EPOCHS, outp=None, log_epoch_frequency=LOG_EPOCH_FREQUENCY, scale_loss=SCALE_LOSS)
 
     # plot the metrics
     plot_metrics(metrics_history, outp)
