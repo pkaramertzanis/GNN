@@ -59,13 +59,13 @@ pd.options.mode.copy_on_write = True
 
 
 # read the datasets
-bacterial_mutagenicity_issty = pd.read_csv(r'datasets\QSARToolbox\raw\2024_06_22_bacterial_mutagenicity_issty.csv', encoding='utf-16le', sep='\t', low_memory=False).assign(origin='2024_06_22_bacterial_mutagenicity_issty.csv')
-genotoxicity_carcinogenicity_ecvam = pd.read_csv(r'datasets\QSARToolbox\raw\2024_06_22_genotoxicity_carcinogenicity_ecvam.csv', encoding='utf-16le', sep='\t', low_memory=False).assign(origin='2024_06_22_genotoxicity_carcinogenicity_ecvam.csv')
-genotoxicity_oasis = pd.read_csv(r'datasets\QSARToolbox\raw\2024_06_22_genotoxicity_oasis.csv', encoding='utf-16le', sep='\t', low_memory=False).assign(origin='2024_06_22_genotoxicity_oasis.csv')
-genotoxicity_pesticides_efsa = pd.read_csv(r'datasets\QSARToolbox\raw\2024_06_22_genotoxicity_pesticides_efsa.csv', encoding='utf-16le', sep='\t', low_memory=False).assign(origin='2024_06_22_genotoxicity_pesticides_efsa.csv')
-micronucleus_issmic = pd.read_csv(r'datasets\QSARToolbox\raw\2024_06_22_micronucleus_issmic.csv', encoding='utf-16le', sep='\t', low_memory=False).assign(origin='2024_06_22_micronucleus_issmic.csv')
-micronucleus_oasis = pd.read_csv(r'datasets\QSARToolbox\raw\2024_06_22_micronucleus_oasis.csv', encoding='utf-16le', sep='\t', low_memory=False).assign(origin='2024_06_22_micronucleus_oasis.csv')
-transgenic_rodent_database = pd.read_csv(r'datasets\QSARToolbox\raw\2024_06_22_transgenic_rodent_database.csv', encoding='utf-16le', sep='\t', low_memory=False).assign(origin='2024_06_22_transgenic_rodent_database.csv')
+bacterial_mutagenicity_issty = pd.read_csv(r'data\QSARToolbox\raw\2024_06_22_bacterial_mutagenicity_issty.csv', encoding='utf-16le', sep='\t', low_memory=False).assign(origin='2024_06_22_bacterial_mutagenicity_issty.csv')
+genotoxicity_carcinogenicity_ecvam = pd.read_csv(r'data\QSARToolbox\raw\2024_06_22_genotoxicity_carcinogenicity_ecvam.csv', encoding='utf-16le', sep='\t', low_memory=False).assign(origin='2024_06_22_genotoxicity_carcinogenicity_ecvam.csv')
+genotoxicity_oasis = pd.read_csv(r'data\QSARToolbox\raw\2024_06_22_genotoxicity_oasis.csv', encoding='utf-16le', sep='\t', low_memory=False).assign(origin='2024_06_22_genotoxicity_oasis.csv')
+genotoxicity_pesticides_efsa = pd.read_csv(r'data\QSARToolbox\raw\2024_06_22_genotoxicity_pesticides_efsa.csv', encoding='utf-16le', sep='\t', low_memory=False).assign(origin='2024_06_22_genotoxicity_pesticides_efsa.csv')
+micronucleus_issmic = pd.read_csv(r'data\QSARToolbox\raw\2024_06_22_micronucleus_issmic.csv', encoding='utf-16le', sep='\t', low_memory=False).assign(origin='2024_06_22_micronucleus_issmic.csv')
+micronucleus_oasis = pd.read_csv(r'data\QSARToolbox\raw\2024_06_22_micronucleus_oasis.csv', encoding='utf-16le', sep='\t', low_memory=False).assign(origin='2024_06_22_micronucleus_oasis.csv')
+transgenic_rodent_database = pd.read_csv(r'data\QSARToolbox\raw\2024_06_22_transgenic_rodent_database.csv', encoding='utf-16le', sep='\t', low_memory=False).assign(origin='2024_06_22_transgenic_rodent_database.csv')
 datasets = pd.concat([bacterial_mutagenicity_issty, genotoxicity_carcinogenicity_ecvam, genotoxicity_oasis, genotoxicity_pesticides_efsa, micronucleus_issmic, micronucleus_oasis, transgenic_rodent_database], axis=0, ignore_index=True, sort=False)
 
 # keep the required columns and rename them
@@ -134,7 +134,7 @@ for idx, datapoint in datasets.loc[msk_keep].iterrows():
              'in vitro/in vivo': 'in vitro',
              'endpoint': endpoint,
              'assay': assay,
-             'cell line/species': 'Salmonella typhimurium'+' ('+(datapoint['Strain'] if datapoint['Strain'] in main_strains else 'unknwon')+')',
+             'cell line/species': 'Salmonella typhimurium'+' ('+(datapoint['Strain'] if datapoint['Strain'] in main_strains else 'unknown')+')',
              'metabolic activation': 'yes' if datapoint['Metabolic activation']=='With S9' else 'no' if datapoint['Metabolic activation']=='Without S9' else 'unknown',
              'genotoxicity mode of action': moa_map.get(datapoint['Strain'], 'unknown'),
              'gene': gene_map.get(datapoint['Strain'], 'unknown'),
@@ -172,7 +172,7 @@ for idx, datapoint in datasets.loc[msk_keep].iterrows():
              'in vitro/in vivo': 'in vitro',
              'endpoint': endpoint,
              'assay': assay,
-             'cell line/species': 'Escherichia coli'+' ('+(datapoint['Strain'] if datapoint['Strain'] in main_strains else 'unknwon')+')',
+             'cell line/species': 'Escherichia coli'+' ('+(datapoint['Strain'] if datapoint['Strain'] in main_strains else 'unknown')+')',
              'metabolic activation': 'yes' if datapoint['Metabolic activation']=='With S9' else 'no' if datapoint['Metabolic activation']=='Without S9' else 'unknown',
              'genotoxicity mode of action': moa_map.get(datapoint['Strain'], 'unknown'),
              'gene': gene_map.get(datapoint['Strain'], 'unknown'),
@@ -209,7 +209,7 @@ for idx, datapoint in datasets.loc[msk_keep].iterrows():
              'in vitro/in vivo': 'in vitro',
              'endpoint': endpoint,
              'assay': assay,
-             'cell line/species': 'Escherichia coli'+' ('+(datapoint['Strain'] if datapoint['Strain'] in main_strains else 'unknwon')+')',
+             'cell line/species': 'Escherichia coli'+' ('+(datapoint['Strain'] if datapoint['Strain'] in main_strains else 'unknown')+')',
              'metabolic activation': 'yes' if datapoint['Metabolic activation']=='With S9' else 'no' if datapoint['Metabolic activation']=='Without S9' else 'unknown',
              'genotoxicity mode of action': moa_map.get(datapoint['Strain'], 'unknown'),
              'gene': gene_map.get(datapoint['Strain'], 'unknown'),
@@ -243,7 +243,7 @@ for idx, datapoint in datasets.loc[msk_keep].iterrows():
              'in vitro/in vivo': 'in vitro',
              'endpoint': endpoint,
              'assay': assay,
-             'cell line/species': 'Escherichia coli'+' ('+(datapoint['Strain'] if datapoint['Strain'] in main_strains else 'unknwon')+')',
+             'cell line/species': 'Escherichia coli'+' ('+(datapoint['Strain'] if datapoint['Strain'] in main_strains else 'unknown')+')',
              'metabolic activation': 'yes' if datapoint['Metabolic activation']=='With S9' else 'no' if datapoint['Metabolic activation']=='Without S9' else 'unknown',
              'genotoxicity mode of action': moa_map.get(datapoint['Strain'], 'unknown'),
              'gene': gene_map.get(datapoint['Strain'], 'unknown'),

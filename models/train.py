@@ -6,6 +6,8 @@ log = logger.get_logger(__name__)
 import pandas as pd
 from pathlib import Path
 import math
+from typing import Union
+import time
 
 import torch
 from torch_geometric.data import Data, DataLoader
@@ -18,17 +20,18 @@ from models.metrics import compute_metrics
 from utilities import zip_recycle
 
 from sklearn.metrics import confusion_matrix, precision_recall_fscore_support
+from sklearn.metrics import roc_auc_score
 
-def train_eval(net: DMPNN_GCN,
+def train_eval(net,
                train_loaders: list[DataLoader],
                eval_loaders: list[DataLoader],
+               loss_fn: torch.nn.CrossEntropyLoss,
                optimizer: torch.optim.Optimizer,
-               loss_fn: torch.nn.modules.loss._Loss,
                scheduler: torch.optim.lr_scheduler.LRScheduler,
                num_epochs: int,
-               outp: Path,
+               outp: Union[Path, None],
                log_epoch_frequency: int = 10,
-               scale_loss = None,
+               scale_loss_task_size: Union[None, str] = None,
                metrics_history = None):
     """
     Train the GNN model using the eval set and evaluate its performance on the eval set. This function essentially
@@ -41,14 +44,14 @@ def train_eval(net: DMPNN_GCN,
     :param net: PyTorch Geometric model
     :param train_loaders: PyTorch Geometric DataLoaders with the training data for the different tasks
     :param eval_loaders: PyTorch Geometric DataLoaders with the eval data for the different tasks
+    :param loss_fn: PyTorch cross entropy loss function
     :param optimizer: PyTorch optimizer
-    :param loss_fn: PyTorch loss function
     :param scheduler: PyTorch learning rate scheduler
     :param outp: Path to store the model weights every log_epoch_frequency epochs, if None model weights are not stored
     :param num_epochs: number of epochs
     :param log_epoch_frequency: log the metrics every so many epochs
-    :param scale_loss: if None then each task contributes to the loss function according to the number of datapoints in each task,
-                       and if 'equal task' each task contributes equally
+    :param scale_loss_task_size: if None then each task contributes to the loss function according to the number of datapoints in each task,
+                                 and if 'equal task' each task contributes equally
     :param metrics_history: list with metrics history to append to, if None, a new list is created
     :return:
     """
@@ -66,37 +69,45 @@ def train_eval(net: DMPNN_GCN,
 
         # loop over the batches, the train loader for each task may have slightly different number of batches, in which case we recycle the shorter train loaders
         for i_batch, batches in enumerate(zip_recycle(*train_loaders)):
+
             metrics_batch = []
             optimizer.zero_grad()
             loss = torch.tensor(0.)
             n_datapoints = 0
             total_batch_size = sum([len(task_batch) for task_batch in batches])
+            losses_task = torch.zeros(len(train_loaders))
             for i_task, task_batch in enumerate(batches):
                 metrics_batch_task = {'epoch': i_epoch, 'batch': i_batch, 'task': i_task, 'stage': 'train', 'type': 'raw', 'number of datapoints': len(task_batch)}
                 n_datapoints += len(task_batch)
 
-
                 y = [1 if assay_data=='positive' else 0 for assay_data in task_batch.assay_data]
+                fraction_positives = sum(y)/float(len(y))
                 y = torch.tensor(y, dtype=torch.long).to(device)
 
                 # pred = net(batch)
                 pred = net(task_batch.x, task_batch.edge_index, task_batch.edge_attr, task_batch.batch, task_id=i_task)
 
-
                 # true positive, true negative, false positive, and false negative counts for each task
-                tp = ((torch.argmax(pred, dim=1) == y) & (y == 1)).int().sum()
-                tn = ((torch.argmax(pred, dim=1) == y) & (y == 0)).int().sum()
-                fp = ((torch.argmax(pred, dim=1) != y) & (y == 0)).int().sum()
-                fn = ((torch.argmax(pred, dim=1) != y) & (y == 1)).int().sum()
+                pred_class = torch.argmax(pred.detach(), dim=1)
+                tp = ((pred_class == y) & (y == 1)).int().sum().item()
+                tn = ((pred_class == y) & (y == 0)).int().sum().item()
+                fp = ((pred_class != y) & (y == 0)).int().sum().item()
+                fn = ((pred_class != y) & (y == 1)).int().sum().item()
 
+                # compute the loss
                 loss_task = loss_fn(pred, y) # this is the mean loss (default)
-                if scale_loss is None:
-                    loss += loss_task * len(task_batch)
-                elif scale_loss == 'equal task':
-                    loss += loss_task * (total_batch_size/len(batches))
+
+                # if specified, scale the loss so that each task contributes according to its size or equally
+                if scale_loss_task_size is None:
+                    # loss += loss_task * len(task_batch)
+                    losses_task[i_task] = loss_task * len(task_batch)
+                elif scale_loss_task_size == 'equal task':
+                    # loss += loss_task * (total_batch_size/len(batches))
+                    losses_task[i_task] = loss_task * (total_batch_size/len(batches))
+                loss = losses_task.sum()
 
                 metrics_batch_task['loss (mean)'] = loss_task.item()
-                metrics_batch_task.update(compute_metrics(tp.item(), tn.item(), fp.item(), fn.item()))
+                metrics_batch_task.update(compute_metrics(tp, tn, fp, fn))
                 metrics_batch.append(metrics_batch_task)
 
             # report the metrics for the batch
@@ -112,14 +123,19 @@ def train_eval(net: DMPNN_GCN,
             log.info(pd.DataFrame(metrics_batch))
 
             metrics_epoch.extend(metrics_batch)
+
             # average the loss for all tasks in the batch and back propagate
+            start_time = time.time()
             loss = loss/float(n_datapoints)
             loss.backward()
             optimizer.step()
+            log.info(f'backward pass took {time.time()-start_time:.2} seconds')
+            start_time = time.time()
 
         scheduler.step()
 
-        if (i_epoch % log_epoch_frequency == 0) or (i_epoch >= num_epochs - 3):  # the last 3 epochs are always reported in case we wish to average the metrics
+        if (i_epoch % log_epoch_frequency == 0 and i_epoch>0) or (i_epoch >= num_epochs - 3):  # the last 3 epochs are always reported in case we wish to average the metrics
+            net.eval()
 
             # report the metrics for the epoch (for all tasks)
             tmp = pd.DataFrame(metrics_epoch)
@@ -144,10 +160,7 @@ def train_eval(net: DMPNN_GCN,
                 tmp.update(compute_metrics(tp.item(), tn.item(), fp.item(), fn.item()))
                 metrics_epoch.append(tmp)
 
-
-
             # evaluate the model on the eval set
-            net.eval()
             for i_batch, batches in enumerate(zip_recycle(*eval_loaders)):
                 metrics_batch = []
                 loss = torch.tensor(0.)
@@ -159,25 +172,29 @@ def train_eval(net: DMPNN_GCN,
 
 
                     y = [1 if assay_data == 'positive' else 0 for assay_data in task_batch.assay_data]
+                    fraction_positives = sum(y)/float(len(y))
                     y = torch.tensor(y, dtype=torch.long).to(device)
 
-                    # pred = net(batch)
                     pred = net(task_batch.x, task_batch.edge_index, task_batch.edge_attr, task_batch.batch, task_id=i_task)
 
                     # true positive, true negative, false positive, and false negative counts for each task
-                    tp = ((torch.argmax(pred, dim=1) == y) & (y == 1)).int().sum()
-                    tn = ((torch.argmax(pred, dim=1) == y) & (y == 0)).int().sum()
-                    fp = ((torch.argmax(pred, dim=1) != y) & (y == 0)).int().sum()
-                    fn = ((torch.argmax(pred, dim=1) != y) & (y == 1)).int().sum()
+                    pred_class = torch.argmax(pred, dim=1).detach()
+                    tp = ((pred_class == y) & (y == 1)).int().sum().item()
+                    tn = ((pred_class == y) & (y == 0)).int().sum().item()
+                    fp = ((pred_class != y) & (y == 0)).int().sum().item()
+                    fn = ((pred_class != y) & (y == 1)).int().sum().item()
 
                     loss_task = loss_fn(pred, y) # this is mean loss (default)
-                    if scale_loss is None:
+
+                    # if specified, scale the loss so that each task contributes according to its size or equally
+                    if scale_loss_task_size is None:
                         loss += loss_task * len(task_batch)
-                    elif scale_loss == 'equal task':
+                    elif scale_loss_task_size == 'equal task':
                         loss += loss_task * (total_batch_size / len(batches))
 
                     metrics_batch_task['loss (mean)'] = loss_task.item()
-                    metrics_batch_task.update(compute_metrics(tp.item(), tn.item(), fp.item(), fn.item()))
+                    metrics_batch_task.update(compute_metrics(tp, tn, fp, fn))
+
                     metrics_batch.append(metrics_batch_task)
 
                 # report the metrics for the batch
@@ -216,6 +233,17 @@ def train_eval(net: DMPNN_GCN,
                 tmp = {'epoch': i_epoch, 'batch': None, 'task': i_task, 'stage': 'eval', 'type': 'aggregate (epoch)', 'number of datapoints': number_of_datapoints}
                 tmp['loss (mean)'] = loss_mean
                 tmp.update(compute_metrics(tp.item(), tn.item(), fp.item(), fn.item()))
+
+                # compute the ROC AUC for the test set
+                prob_test_epoch = []
+                y_test_epoch = []
+                for task_batch in eval_loaders[i_task]:
+                    pred = net(task_batch.x, task_batch.edge_index, task_batch.edge_attr, task_batch.batch, task_id=i_task)
+                    prob_test_epoch.append(torch.nn.functional.softmax(pred, dim=1).detach().cpu().numpy())
+                    y_test_epoch.append([1 if assay_data == 'positive' else 0 for assay_data in task_batch.assay_data])
+                prob_test_epoch = np.concatenate(prob_test_epoch, axis=0)
+                y_test_epoch = np.concatenate(y_test_epoch, axis=0)
+                tmp['roc auc'] = roc_auc_score(y_test_epoch, prob_test_epoch[:, 1])
                 metrics_epoch.append(tmp)
 
             metrics_history.extend(metrics_epoch)

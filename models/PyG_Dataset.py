@@ -100,7 +100,6 @@ class PyG_Dataset(InMemoryDataset):
         # read the sdf file with the raw data
         mols = read_sdf(self.raw_file_names[0])
 
-
         # collect the adjacency information, the node features, the edge features and the assay_results
         adjacency_info = []
         node_features = []
@@ -147,6 +146,7 @@ class PyG_Dataset(InMemoryDataset):
             # .. numerical node features (type float)
             x = pd.concat([x, node_features[i_mol].drop(one_hot_encode_node_cols.keys(), axis='columns')], axis='columns')
             x = x.astype('float32').fillna(0.)
+            self.node_feats_names = x.columns
             x = torch.tensor(x.to_numpy(), dtype=torch.float)
 
             # edge features
@@ -161,6 +161,7 @@ class PyG_Dataset(InMemoryDataset):
             # .. numerical edge features (type float)
             edge_attr = pd.concat([edge_attr, edge_features[i_mol].drop(one_hot_encode_edge_cols.keys(), axis='columns')], axis='columns')
             edge_attr = edge_attr.astype('float32').fillna(0.)
+            self.edge_attr_names = edge_attr.columns
             edge_attr = torch.tensor(edge_attr.to_numpy(), dtype=torch.float)
 
             # obtain the genotoxicity outcome
@@ -216,3 +217,6 @@ class PyG_Dataset(InMemoryDataset):
         # torch.save(self.collate(data_list), self.processed_paths[0])
 
 
+    def get_node_edge_feature_names(self):
+        '''Returns the names of the node and edge features'''
+        return self.node_feats_names, self.edge_attr_names

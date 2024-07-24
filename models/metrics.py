@@ -18,20 +18,35 @@ def compute_metrics(tp, tn, fp, fn) -> dict:
     :param fn: false negative
     :return: dictionary with accuracy, precision, recall, and f1 score in addition to the input tp, tn, fp and fn
     """
+
+    # accuracy
     accuracy = (tp + tn) / (tp + tn + fp + fn)
+
+    # positive predictive value, precision
     precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+
+    # true positive rate, recall, sensitivity
     recall = tp / (tp + fn) if (tp + fn) > 0 else 0
+
+    # true negative rate, specificity
+    specificity = tn / (tn + fp) if (tn + fp) > 0 else 0
+
+    # f1 score
     f1_score = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
 
+    # balanced accuracy
+    balanced_accuracy = (recall + specificity) / 2
 
     metrics = {'tp': tp, 'tn': tn, 'fp': fp, 'fn': fn,
-               'accuracy': accuracy, 'precision': precision, 'recall': recall, 'f1 score': f1_score}
+               'accuracy': accuracy, 'precision': precision, 'recall': recall, 'specificity': specificity,
+               'f1 score': f1_score, 'balanced accuracy': balanced_accuracy}
     return metrics
 
-def plot_metrics(metrics_history: dict, output: Path, drop_first_epoch=True):
+def plot_metrics(metrics_history: dict, task_names: list[str], output: Path, drop_first_epoch=True):
     """
     Plot the metrics history
     :param metrics_history: list with metrics history dictionaries for training and validation for each epoch
+    :param task_names: list with task names
     :param output: output file path
     :param drop_first_epoch: drop the first epoch from the plot
     :return:
@@ -74,7 +89,7 @@ def plot_metrics(metrics_history: dict, output: Path, drop_first_epoch=True):
         ax.plot(loss_eval['epoch'], loss_eval['loss (mean)'], label='eval', c='k', linestyle='dashed', linewidth=0.5)
         ax.set_xlabel('epoch', fontsize=6)
         ax.set_ylabel('loss', fontsize=6)
-        ax.set_title(f'task: {i_task}', fontsize=6)
+        ax.set_title(f"task: {i_task} ({task_names[i_task]})", fontsize=2)
         ax.legend(fontsize=6)
         ax.tick_params(axis='both', which='major', labelsize=6)
     fig.tight_layout()
@@ -128,13 +143,12 @@ def plot_metrics(metrics_history: dict, output: Path, drop_first_epoch=True):
         ax.plot(metrics_eval['epoch'], metrics_eval['f1 score'], label='f1 score (eval)', c='k', linestyle='dashed', linewidth=0.5)
         ax.set_xlabel('epoch', fontsize=6)
         ax.set_ylabel('metric', fontsize=6)
-        ax.set_title(f"task: {i_task}, train set size: {metrics_train['number of datapoints'].iloc[0]}, eval set size: {metrics_eval['number of datapoints'].iloc[0]}", fontsize=6)
+        ax.set_title(f"task: {i_task} ({task_names[i_task]}), train set size: {metrics_train['number of datapoints'].iloc[0]}, eval set size: {metrics_eval['number of datapoints'].iloc[0]}", fontsize=2)
         ax.legend(loc='lower center', fontsize=4, frameon=False, ncols=4)
         ax.tick_params(axis='both', which='major', labelsize=6)
     fig.tight_layout()
     fig.savefig(output / 'metrics_task.png', dpi=600)
     plt.close(fig)
-
 
     plt.interactive(True)
 

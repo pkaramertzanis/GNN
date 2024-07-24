@@ -157,6 +157,7 @@ def process_smiles(smiles: str) -> Union[tuple[str, Chem.Mol, str], None]:
 
 
 def create_sdf(flat_datasets: list, task_aggregation_cols: list[str],
+               record_selection: Union[dict[str, list[str]], None],
                filter_unknown: bool,
                outp_sdf: Path, outp_tab: Path) -> list[str]:
     '''
@@ -165,6 +166,8 @@ def create_sdf(flat_datasets: list, task_aggregation_cols: list[str],
 
     :param flat_datasets: list of paths to the flattened datasets
     :param task_aggregation_cols: list of columns (as in the flatten datasets) to aggregate the tasks
+    :param record_selection: dictionary with the records to keep, the key is the column and the value is a list of values, if None all records are kept.
+                             Typically, this is used to select one assay or a couple of assays only.
     :param filter_unknown: if True, the records for which one or more of the task aggregation columns is "unknown" will be removed
     :param outp_sdf: path to the output sdf file
     :param outp_tab: path to the output tabular (excel) file
@@ -184,6 +187,16 @@ def create_sdf(flat_datasets: list, task_aggregation_cols: list[str],
     if filter_unknown:
         msk = dataset[task_aggregation_cols].apply(lambda row: 'unknown' not in row.to_list(), axis='columns')
         dataset = dataset.loc[msk]
+        log.info(f'from {len(msk)} records {(~msk).sum()} were removed because at least one of the task aggregation columns was unknown')
+
+    # keeps only selected records
+    if record_selection is not None:
+        dataset_selection = []
+        for col, vals in record_selection.items():
+            msk = dataset[col].isin(vals)
+            dataset_selection.append(dataset.loc[msk])
+        dataset = pd.concat(dataset_selection, ignore_index=True, axis='index', sort=False).drop_duplicates()
+
 
 
     # preprocess the structures, some may be removed by the checker and due to the applied operations
