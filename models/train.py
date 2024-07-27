@@ -10,7 +10,8 @@ from typing import Union
 import time
 
 import torch
-from torch_geometric.data import Data, DataLoader
+from torch_geometric.data import Data
+from torch_geometric.loader import DataLoader
 
 import matplotlib.pyplot as plt
 
@@ -20,12 +21,12 @@ from models.metrics import compute_metrics
 from utilities import zip_recycle
 
 from sklearn.metrics import confusion_matrix, precision_recall_fscore_support
-from sklearn.metrics import roc_auc_score
+from sklearn.metrics import roc_auc_score, roc_curve
 
 def train_eval(net,
                train_loaders: list[DataLoader],
                eval_loaders: list[DataLoader],
-               loss_fn: torch.nn.CrossEntropyLoss,
+               global_loss_fn: Union[torch.nn.CrossEntropyLoss, None],
                optimizer: torch.optim.Optimizer,
                scheduler: torch.optim.lr_scheduler.LRScheduler,
                num_epochs: int,
@@ -35,16 +36,17 @@ def train_eval(net,
                metrics_history = None):
     """
     Train the GNN model using the eval set and evaluate its performance on the eval set. This function essentially
-    executes a single inner loop of the nested cross-validation procedure.
+    executes a single inner loop of the nested cross-validation procedure. It is also used for refitting the model with
+    the optimal configuration in the outer loop.
 
-    Although the loss function (cross entropy) allows multiclass classification (i.e. we can include the ambguous calls)
+    Although the loss function (cross entropy) allows multiclass classification (i.e. we can include the ambiguous calls)
     the metrics reported assume binary classification and hence this function should only be used for binary classification tasks.
     In any case, the handling of ambiguous calls should be done using ordinal regression as the classes have order.
 
     :param net: PyTorch Geometric model
     :param train_loaders: PyTorch Geometric DataLoaders with the training data for the different tasks
     :param eval_loaders: PyTorch Geometric DataLoaders with the eval data for the different tasks
-    :param loss_fn: PyTorch cross entropy loss function
+    :param global_loss_fn: PyTorch cross entropy loss function, if None we define a loss function per task/batch by scaling the positives
     :param optimizer: PyTorch optimizer
     :param scheduler: PyTorch learning rate scheduler
     :param outp: Path to store the model weights every log_epoch_frequency epochs, if None model weights are not stored
@@ -93,6 +95,13 @@ def train_eval(net,
                 tn = ((pred_class == y) & (y == 0)).int().sum().item()
                 fp = ((pred_class != y) & (y == 0)).int().sum().item()
                 fn = ((pred_class != y) & (y == 1)).int().sum().item()
+
+
+                # if the loss function is not specified, we define a loss function per task/batch by scaling the positives
+                if global_loss_fn is None:
+                    loss_fn = torch.nn.CrossEntropyLoss(weight=torch.tensor([fraction_positives, 1. - fraction_positives]))
+                else:
+                    loss_fn = global_loss_fn
 
                 # compute the loss
                 loss_task = loss_fn(pred, y) # this is the mean loss (default)
@@ -158,6 +167,21 @@ def train_eval(net,
                 tmp = {'epoch': i_epoch, 'batch': None, 'task': i_task, 'stage': 'train', 'type': 'aggregate (epoch)', 'number of datapoints': number_of_datapoints}
                 tmp['loss (mean)'] = loss_mean
                 tmp.update(compute_metrics(tp.item(), tn.item(), fp.item(), fn.item()))
+
+                # compute the ROC AUC for the train set
+                prob_train_epoch = []
+                y_train_epoch = []
+                for task_batch in train_loaders[i_task]:
+                    pred = net(task_batch.x, task_batch.edge_index, task_batch.edge_attr, task_batch.batch, task_id=i_task)
+                    prob_train_epoch.append(torch.nn.functional.softmax(pred, dim=1).detach().cpu().numpy())
+                    y_train_epoch.append([1 if assay_data == 'positive' else 0 for assay_data in task_batch.assay_data])
+                prob_train_epoch = np.concatenate(prob_train_epoch, axis=0)
+                y_train_epoch = np.concatenate(y_train_epoch, axis=0)
+                roc_auc_train =  roc_auc_score(y_train_epoch, prob_train_epoch[:, 1])
+                roc_train = roc_curve(y_train_epoch, prob_train_epoch[:, 1])
+                tmp['roc auc'] = roc_auc_train
+                tmp['roc'] = roc_train # tuple with fpr, tpr, thresholds
+
                 metrics_epoch.append(tmp)
 
             # evaluate the model on the eval set
@@ -169,7 +193,6 @@ def train_eval(net,
                 for i_task, task_batch in enumerate(batches):
                     metrics_batch_task = {'epoch': i_epoch, 'batch': i_batch, 'task': i_task, 'stage': 'eval', 'type': 'raw', 'number of datapoints': len(task_batch)}
                     n_datapoints += len(task_batch)
-
 
                     y = [1 if assay_data == 'positive' else 0 for assay_data in task_batch.assay_data]
                     fraction_positives = sum(y)/float(len(y))
@@ -183,6 +206,13 @@ def train_eval(net,
                     tn = ((pred_class == y) & (y == 0)).int().sum().item()
                     fp = ((pred_class != y) & (y == 0)).int().sum().item()
                     fn = ((pred_class != y) & (y == 1)).int().sum().item()
+
+                    # if the loss function is not specified, we define a loss function per task/batch by scaling the positives
+                    if global_loss_fn is None:
+                        loss_fn = torch.nn.CrossEntropyLoss(
+                            weight=torch.tensor([fraction_positives, 1. - fraction_positives]))
+                    else:
+                        loss_fn = global_loss_fn
 
                     loss_task = loss_fn(pred, y) # this is mean loss (default)
 
@@ -234,17 +264,23 @@ def train_eval(net,
                 tmp['loss (mean)'] = loss_mean
                 tmp.update(compute_metrics(tp.item(), tn.item(), fp.item(), fn.item()))
 
-                # compute the ROC AUC for the test set
-                prob_test_epoch = []
-                y_test_epoch = []
+                # compute the ROC AUC for the eval set
+                prob_eval_epoch = []
+                y_eval_epoch = []
                 for task_batch in eval_loaders[i_task]:
                     pred = net(task_batch.x, task_batch.edge_index, task_batch.edge_attr, task_batch.batch, task_id=i_task)
-                    prob_test_epoch.append(torch.nn.functional.softmax(pred, dim=1).detach().cpu().numpy())
-                    y_test_epoch.append([1 if assay_data == 'positive' else 0 for assay_data in task_batch.assay_data])
-                prob_test_epoch = np.concatenate(prob_test_epoch, axis=0)
-                y_test_epoch = np.concatenate(y_test_epoch, axis=0)
-                tmp['roc auc'] = roc_auc_score(y_test_epoch, prob_test_epoch[:, 1])
+                    prob_eval_epoch.append(torch.nn.functional.softmax(pred, dim=1).detach().cpu().numpy())
+                    y_eval_epoch.append([1 if assay_data == 'positive' else 0 for assay_data in task_batch.assay_data])
+                prob_eval_epoch = np.concatenate(prob_eval_epoch, axis=0)
+                y_eval_epoch = np.concatenate(y_eval_epoch, axis=0)
+                roc_auc_eval =  roc_auc_score(y_eval_epoch, prob_eval_epoch[:, 1])
+                roc_eval = roc_curve(y_eval_epoch, prob_eval_epoch[:, 1])
+                tmp['roc auc'] = roc_auc_eval
+                tmp['roc'] = roc_eval # tuple with fpr, tpr, thresholds
+
                 metrics_epoch.append(tmp)
+
+
 
             metrics_history.extend(metrics_epoch)
 

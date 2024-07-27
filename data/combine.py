@@ -41,6 +41,7 @@ import numpy as np
 from tqdm import tqdm
 import re
 import json
+from functools import reduce
 
 from cheminformatics.rdkit_toolkit import (convert_smiles_to_mol, standardise_mol, remove_stereo,
                                            normalise_mol, remove_fragments, check_mol)
@@ -167,7 +168,7 @@ def create_sdf(flat_datasets: list, task_aggregation_cols: list[str],
     :param flat_datasets: list of paths to the flattened datasets
     :param task_aggregation_cols: list of columns (as in the flatten datasets) to aggregate the tasks
     :param record_selection: dictionary with the records to keep, the key is the column and the value is a list of values, if None all records are kept.
-                             Typically, this is used to select one assay or a couple of assays only.
+                             Typically, this is used to select one assay or a couple of assays only. All filters apply at the same time.
     :param filter_unknown: if True, the records for which one or more of the task aggregation columns is "unknown" will be removed
     :param outp_sdf: path to the output sdf file
     :param outp_tab: path to the output tabular (excel) file
@@ -191,12 +192,12 @@ def create_sdf(flat_datasets: list, task_aggregation_cols: list[str],
 
     # keeps only selected records
     if record_selection is not None:
-        dataset_selection = []
+        msk = []
         for col, vals in record_selection.items():
-            msk = dataset[col].isin(vals)
-            dataset_selection.append(dataset.loc[msk])
-        dataset = pd.concat(dataset_selection, ignore_index=True, axis='index', sort=False).drop_duplicates()
-
+            msk.append(dataset[col].isin(vals))
+        msk = reduce(lambda x, y: x & y, msk)
+        dataset = dataset.loc[msk]
+        log.info(f'from {len(msk)} records {(~msk).sum()} were removed because of the applied filters on the records')
 
 
     # preprocess the structures, some may be removed by the checker and due to the applied operations

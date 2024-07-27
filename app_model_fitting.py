@@ -30,7 +30,7 @@ from itertools import product
 import random
 import math
 from datetime import datetime
-
+import re
 
 from sklearn.model_selection import StratifiedKFold
 
@@ -39,7 +39,8 @@ from data.combine import create_sdf
 from models.DMPNN_GCN.DMPNN_GCN import DMPNN_GCN
 from models.Attentive_GCN.Attentive_GCN import Attentive_GCN
 
-from models.metrics import plot_metrics
+from models.metrics import (plot_metrics_convergence, consolidate_metrics_outer,
+                            plot_metrics_convergence_outer_average, plot_roc_curve_outer_average)
 from models.train import train_eval
 
 # set the device
@@ -47,13 +48,13 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 # set up the dataset
 flat_datasets = [
-                r'data/Hansen_2009/tabular/Hansen_2009_genotoxicity.xlsx',
+                #r'data/Hansen_2009/tabular/Hansen_2009_genotoxicity.xlsx',
                 # r'data/Leadscope/tabular/Leadscope_genotoxicity.xlsx',
-                # r'data/QSARToolbox/tabular/QSARToolbox_genotoxicity.xlsx'
+                r'data/QSARToolbox/tabular/QSARToolbox_genotoxicity.xlsx'
                 ]
-# task_aggregation_cols = ['in vitro/in vivo', 'endpoint', 'assay', 'cell line/species', 'metabolic activation']
+task_aggregation_cols = ['in vitro/in vivo', 'endpoint', 'assay', 'cell line/species', 'metabolic activation']
 # task_aggregation_cols = ['in vitro/in vivo', 'endpoint', 'assay', 'cell line/species']
-task_aggregation_cols = ['in vitro/in vivo', 'endpoint', 'assay']
+# task_aggregation_cols = ['in vitro/in vivo', 'endpoint', 'assay']
 # record_selection = {'assay': ['bacterial reverse mutation assay']}
 # record_selection = {'cell line/species': ['Escherichia coli (WP2 Uvr A)',
 #                                           'Salmonella typhimurium (TA 100)',
@@ -64,8 +65,14 @@ task_aggregation_cols = ['in vitro/in vivo', 'endpoint', 'assay']
 #                                           'Salmonella typhimurium (TA 1538)',
 #                                           'Salmonella typhimurium (TA 97)',
 #                                           'Salmonella typhimurium (TA 98)']}
+record_selection = {'cell line/species': ['Salmonella typhimurium (TA 100)',
+                                          'Salmonella typhimurium (TA 98)',
+                                          'Salmonella typhimurium (TA 1535)']}
+# record_selection = {'cell line/species': ['Salmonella typhimurium (TA 1535)'],
+#                     'metabolic activation': ['no']
+#                      }
 # record_selection = {'cell line/species': ['Salmonella typhimurium (TA 100)']}
-record_selection = None
+# record_selection = None
 outp_sdf = Path(r'data/combined/sdf/genotoxicity_dataset.sdf')
 outp_tab = Path(r'data/combined/tabular/genotoxicity_dataset.xlsx')
 tasks = create_sdf(flat_datasets = flat_datasets,
@@ -82,10 +89,10 @@ MINIMUM_TASK_DATASET = 512 # minimum number of data points for a task
 BATCH_SIZE_MAX = 512 # maximum batch size (largest task, the smaller tasks are scaled accordingly so the number of batches is the same)
 K_FOLD_INNER = 5 # number of folds for the inner cross-validation
 K_FOLD_OUTER = 10 # number of folds for the outer cross-validation
-NUM_EPOCHS = 30 # number of epochs
+NUM_EPOCHS = 80 # number of epochs
 MODEL_NAME = 'Attentive_GCN' # name of the model, can be 'DMPNN_GCN' or 'Attentive_GCN'
 SCALE_LOSS_TASK_SIZE = None # how to scale the loss function, can be 'equal task' or None
-SCALE_LOSS_CLASS = 'equal class' # how to scale the loss function, can be 'equal class' or None
+SCALE_LOSS_CLASS_SIZE = 'equal class (task)' # how to scale the loss function, can be 'equal class (task)', 'equal class (global)' or None
 
 HANDLE_AMBIGUOUS = 'ignore' # how to handle ambiguous outcomes, can be 'keep', 'set_positive', 'set_negative' or 'ignore', but the model fitting does not support 'keep'
 LOG_EPOCH_FREQUENCY = 10 # frequency to log the metrics during training
@@ -93,7 +100,7 @@ LOG_EPOCH_FREQUENCY = 10 # frequency to log the metrics during training
 
 
 # location to store the metrics logs
-metrics_history_path = Path(rf'D:\myApplications\local\2024_01_21_GCN_Muta\output\iteration42')/MODEL_NAME
+metrics_history_path = Path(rf'D:\myApplications\local\2024_01_21_GCN_Muta\output\iteration55')/MODEL_NAME
 metrics_history_path.mkdir(parents=True, exist_ok=True)
 
 # features, checkers and standardisers
@@ -120,7 +127,7 @@ elif MODEL_NAME == 'Attentive_GCN':
                         'num_timesteps': [3], # [1, 2, 3, 4]
                         'dropout': [0.0], # [0.5, 0.6, 0.7, 0.8]
                         'learning_rate': [0.005], # [0.001, 0.005, 0.01]
-                        'weight_decay': [1.e-3],  # [1.e-5, 1e-4, 1.e-3]
+                        'weight_decay': [5.e-4],  # [1.e-5, 1e-4, 1.e-3]
                         }
 
 
@@ -212,6 +219,7 @@ random.shuffle(configurations)
 
 # outer loop of the nested cross-validation
 for i_outer in range(K_FOLD_OUTER):
+# for i_outer in [0,1,2]: # DO NOT FORGET TO UNCOMMENT for limited runs !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     log.info(f'Initiating outer iteration {i_outer}')
 
     if len(configurations) == 1:
@@ -260,10 +268,13 @@ for i_outer in range(K_FOLD_OUTER):
 
                 # if specified, scale the loss so that each class contributes according to its size or equally
                 # default reduction is mean
-                if SCALE_LOSS_CLASS is None:
-                    loss_fn = torch.nn.CrossEntropyLoss(weight=torch.tensor([1., 1.]))
-                elif SCALE_LOSS_CLASS == 'equal class':
-                    loss_fn = torch.nn.CrossEntropyLoss(weight=torch.tensor([fraction_positives, 1.-fraction_positives]))
+                if SCALE_LOSS_CLASS_SIZE is None:
+                    global_loss_fn = torch.nn.CrossEntropyLoss(weight=torch.tensor([1., 1.]))
+                elif SCALE_LOSS_CLASS_SIZE == 'equal class (global)':
+                    global_loss_fn = torch.nn.CrossEntropyLoss(weight=torch.tensor([fraction_positives, 1.-fraction_positives]))
+                elif SCALE_LOSS_CLASS_SIZE == 'equal class (task)':
+                    # in this case we define a separate loss function per task in the train_eval function
+                    global_loss_fn = None
 
                 # optimiser
                 optimizer = torch.optim.Adam(net.parameters(), lr=optimiser_parameters['learning_rate'], betas=[0.9, 0.999], eps=1e-08, weight_decay=optimiser_parameters['weight_decay'], amsgrad=False)
@@ -275,27 +286,26 @@ for i_outer in range(K_FOLD_OUTER):
                 # train the model
                 outp = metrics_history_path/f'outer_fold_{i_outer}_configuration_ID_{configuration_ID}_inner_fold_{i_inner}'
                 outp.mkdir(parents=True, exist_ok=True)
-                metrics_history = train_eval(net, train_loaders, eval_loaders, loss_fn, optimizer, scheduler, NUM_EPOCHS, outp/'model_weights_diff_quantiles.tsv', log_epoch_frequency=LOG_EPOCH_FREQUENCY, scale_loss_task_size=SCALE_LOSS_TASK_SIZE)
-
-                # plot the metrics
-                task_names = list(dsets.keys())
-                plot_metrics(metrics_history, task_names, outp)
-
+                metrics_history = train_eval(net, train_loaders, eval_loaders, global_loss_fn, optimizer, scheduler, NUM_EPOCHS, outp/'model_weights_diff_quantiles.tsv', log_epoch_frequency=LOG_EPOCH_FREQUENCY, scale_loss_task_size=SCALE_LOSS_TASK_SIZE)
 
                 # log the metrics for the training set and evaluation set
                 metrics_history = pd.DataFrame(metrics_history)
+                # remove the roc columns so that we can store the metrics as a dataframe
+                metrics_history = metrics_history.drop(columns=['roc'], axis='columns')
                 cols = {'time': datetime.now(), 'outer fold': i_outer}
                 cols.update(configuration)
                 cols.update({'inner fold': i_inner})
                 for i_col, (col_name, col_value) in enumerate(cols.items()):
                     metrics_history.insert(i_col, col_name, col_value)
-
-                # append the results to the metric history log
                 with open(metrics_history_path/'metrics_history.tsv', mode='at', encoding='utf-8', buffering=1, newline='') as f:
                     metrics_history.to_csv(f, header=f.tell()==0, index=False, sep='\t', lineterminator='\n')
 
+                # plot the metrics
+                task_names = list(dsets.keys())
+                plot_metrics_convergence(metrics_history, task_names=task_names, stages=['train', 'eval'], output=outp)
 
-        # find the optimal configuration by using the average eval f1 score over the inner folds (avoid reading the whole file in memory)
+
+        # find the optimal configuration by using the average eval balanced accuracy over the inner folds (avoid reading the whole file in memory)
         chunk_iterator = pd.read_csv(metrics_history_path/'metrics_history.tsv', chunksize=10_000, sep='\t')
         metrics_history_configuration = []
         for chunk in chunk_iterator:
@@ -306,9 +316,10 @@ for i_outer in range(K_FOLD_OUTER):
         # .. keep the last three epochs
         msk = (metrics_history_configuration['epoch'] >= metrics_history_configuration['epoch'].max() - 3)
         metrics_history_configuration = metrics_history_configuration.loc[msk]
-        f1_eval_inner_folds = metrics_history_configuration.groupby('configuration_ID')['f1 score'].mean()
-        best_configuration_ID = f1_eval_inner_folds.idxmax()
-        log.info(f'outer fold {i_outer}, best configuration ID: {best_configuration_ID} with f1 score: {f1_eval_inner_folds.max():.4} (range: {f1_eval_inner_folds.min():.4} - {f1_eval_inner_folds.max():.4})')
+        balanced_accuracy_eval_inner_folds = metrics_history_configuration.groupby('configuration_ID')['balanced accuracy'].mean()
+        best_configuration_ID = balanced_accuracy_eval_inner_folds.idxmax()
+        log.info(f'outer fold {i_outer}, best configuration ID: {best_configuration_ID} with balanced accuracy: {balanced_accuracy_eval_inner_folds.max():.4} (range: {balanced_accuracy_eval_inner_folds.min():.4} - {balanced_accuracy_eval_inner_folds.max():.4})')
+
 
     # refit using the whole train + eval sets and evaluate in the test set
     msk = (splits['outer fold'] == i_outer) & (splits['inner fold'] == 0)
@@ -346,10 +357,13 @@ for i_outer in range(K_FOLD_OUTER):
 
     # if specified, scale the loss so that each class contributes according to its size or equally
     # default reduction is mean
-    if SCALE_LOSS_CLASS is None:
-        loss_fn = torch.nn.CrossEntropyLoss(weight=torch.tensor([1., 1.]))
-    elif SCALE_LOSS_CLASS == 'equal class':
-        loss_fn = torch.nn.CrossEntropyLoss(weight=torch.tensor([fraction_positives, 1. - fraction_positives]))
+    if SCALE_LOSS_CLASS_SIZE is None:
+        global_loss_fn = torch.nn.CrossEntropyLoss(weight=torch.tensor([1., 1.]))
+    elif SCALE_LOSS_CLASS_SIZE == 'equal class (global)':
+        global_loss_fn = torch.nn.CrossEntropyLoss(weight=torch.tensor([fraction_positives, 1. - fraction_positives]))
+    elif SCALE_LOSS_CLASS_SIZE == 'equal class (task)':
+        # in this case we define a separate loss function per task in the train_eval function
+        global_loss_fn = None
 
     # optimiser
     optimizer = torch.optim.Adam(net.parameters(), lr=optimiser_parameters['learning_rate'], betas=[0.9, 0.999], eps=1e-08, weight_decay=optimiser_parameters['weight_decay'],
@@ -362,40 +376,50 @@ for i_outer in range(K_FOLD_OUTER):
     # train the model, double the number of epochs for the final training
     outp = metrics_history_path/f'outer_fold_{i_outer}_configuration_ID_{configuration_ID}'
     outp.mkdir(parents=True, exist_ok=True)
-    metrics_history = train_eval(net, train_eval_loaders, test_loaders, loss_fn, optimizer, scheduler, 2*NUM_EPOCHS, outp=None, log_epoch_frequency=LOG_EPOCH_FREQUENCY, scale_loss_task_size=SCALE_LOSS_TASK_SIZE)
-
-    # plot the metrics
-    task_names = list(dsets.keys())
-    plot_metrics(metrics_history, task_names, outp)
-
-    # save the model
-    torch.save(net, outp/'model.pth')
+    metrics_history = train_eval(net, train_eval_loaders, test_loaders, global_loss_fn, optimizer, scheduler, 2*NUM_EPOCHS, outp=None, log_epoch_frequency=LOG_EPOCH_FREQUENCY, scale_loss_task_size=SCALE_LOSS_TASK_SIZE)
 
     # log the metrics for the training set and evaluation set
     metrics_history = pd.DataFrame(metrics_history)
+    # remove the roc columns so that we can store the metrics as a dataframe and store the roc for further processing
+    roc = (metrics_history
+           .dropna(subset=['roc'])
+           .filter(['epoch', 'stage', 'task', 'roc'], axis='columns')
+           .pipe(lambda df: df.assign(**{'stage': np.where(df['stage']=='train', 'train+eval', 'test')}))
+           )
+    roc.to_pickle(outp/'roc_outer.pkl')
+
+    metrics_history = metrics_history.drop(columns=['roc'], axis='columns')
     cols = {'time': datetime.now(), 'outer fold': i_outer}
     cols.update(configuration)
     cols.update({'inner fold': None})
     for i_col, (col_name, col_value) in enumerate(cols.items()):
         metrics_history.insert(i_col, col_name, col_value)
     metrics_history['stage'] = np.where(metrics_history['stage']=='train', 'train+eval', 'test')
-
-    # append the results to the metric history log
     with open(metrics_history_path/'metrics_history.tsv', mode='at', encoding='utf-8', buffering=1, newline='') as f:
         metrics_history.to_csv(f, header=f.tell() == 0, index=False, sep='\t', lineterminator='\n')
 
+    # plot the metrics
+    task_names = list(dsets.keys())
+    plot_metrics_convergence(metrics_history, task_names=task_names, stages=['train+eval', 'test'], output=outp)
+
+    # save the model
+    torch.save(net, outp/'model.pth')
 
 
-# retrieve the metrics for each outer iteration and list the optimal configuration for each outer iteration
-metrics_history_outer = pd.read_csv(metrics_history_path/'metrics_history.tsv', sep='\t')
-# keep only the last three epochs (or averaging)
-msk = metrics_history_outer['epoch'] >= metrics_history_outer['epoch'].max()-3
-metrics_history_outer = metrics_history_outer.loc[msk]
-res = metrics_history_outer.pivot_table(index='outer fold', columns='stage', values=['accuracy', 'precision', 'recall', 'specificity', 'f1 score', 'balanced accuracy', 'roc auc'], aggfunc='mean', margins=True)
-res.columns = ['_'.join(col).strip() for col in res.columns.values]
-res = res.drop([col for col in res.columns if col.endswith('_All')], axis='columns')
-res = res.merge(metrics_history_outer[['outer fold', 'configuration_ID']+list(model_parameters.keys())+list(optimiser_parameters.keys())].drop_duplicates().set_index('outer fold'), left_index=True, right_index=True, how='left')
-res.to_excel(metrics_history_path/'metrics_history_outer.xlsx')
+# consolidate the metrics for each outer iteration and list the optimal configuration for each outer iteration
+consolidate_metrics_outer(metrics_history_path/'metrics_history.tsv',
+                          metrics_history_path/'metrics_history_outer.xlsx',
+                          task_names=list(dsets.keys()),
+                          configuration_parameters=list(configurations[0].keys()))
 
 
+# plot the average metrics for all outer iterations as a function of epoch (range is shown as a shaded area)
+task_names = [f'task {i_task}' for i_task in range(6)]
+plot_metrics_convergence_outer_average(metrics_history_path/'metrics_history.tsv',
+                                       metrics_history_path/'metrics_convergence_outer_average.png',
+                                       task_names=task_names)
 
+
+# plot the average ROC for all outer iterations (range is shown as a shaded area)
+roc_curve_outer_path = metrics_history_path/'roc_outer_average.png'
+plot_roc_curve_outer_average(metrics_history_path, roc_curve_outer_path)
