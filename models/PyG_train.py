@@ -33,7 +33,7 @@ def train_eval(net,
                outp: Union[Path, None],
                log_epoch_frequency: int = 10,
                scale_loss_task_size: Union[None, str] = None,
-               metrics_history = None):
+               metrics_history = None) -> list[dict]:
     """
     Train the GNN model using the eval set and evaluate its performance on the eval set. This function essentially
     executes a single inner loop of the nested cross-validation procedure. It is also used for refitting the model with
@@ -55,7 +55,7 @@ def train_eval(net,
     :param scale_loss_task_size: if None then each task contributes to the loss function according to the number of datapoints in each task,
                                  and if 'equal task' each task contributes equally
     :param metrics_history: list with metrics history to append to, if None, a new list is created
-    :return:
+    :return: list with metrics history dictionaries, one dictionary per logging event
     """
     # metrics history, continue from the previous run if not None
     if metrics_history is None:
@@ -139,7 +139,6 @@ def train_eval(net,
             loss.backward()
             optimizer.step()
             log.info(f'backward pass took {time.time()-start_time:.2} seconds')
-            start_time = time.time()
 
         scheduler.step()
 

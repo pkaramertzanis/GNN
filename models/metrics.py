@@ -320,6 +320,7 @@ def plot_metrics_convergence_outer_average(metrics_history_path: Path,
     fig.legend(metrics.keys(), fontsize=10, loc='lower center', frameon=False, ncol=3, bbox_to_anchor=(0.5, 0.00))
     # fig.tight_layout()
     fig.savefig(metrics_convergence_outer_path, dpi=600)
+    plt.close(fig)
     plt.interactive(True)
 
 def plot_roc_curve_outer_average(metrics_history_path: Path,
@@ -375,18 +376,19 @@ def plot_roc_curve_outer_average(metrics_history_path: Path,
 
         mean_tpr /= len(tprs)
 
-        # Compute standard deviation of TPRs
+        # compute standard deviation of TPRs
         tprs = np.array(tprs)
         std_tpr = np.std(tprs, axis=0)
 
+        # plot individual ROC curves
         for fpr, tpr, _ in roc_curves:
             axs[i_stage].plot(fpr, tpr, lw=0.5, alpha=0.2, color='k')
 
-        # Plot mean ROC curve
+        # plot mean ROC curve
         axs[i_stage].plot(all_fpr, mean_tpr, color='b', label='mean ROC', lw=2.)
 
-        # Plot standard deviation area
-        axs[i_stage].fill_between(all_fpr, mean_tpr - std_tpr, mean_tpr + std_tpr, color='grey', alpha=0.2, label='± 1 std. dev.', edgecolor=None)
+        # plot standard deviation area
+        axs[i_stage].fill_between(all_fpr, mean_tpr - std_tpr, mean_tpr + std_tpr, color='k', alpha=0.4, label='± 1 std. dev.', edgecolor=None)
 
         # Plot diagonal line for random classifier
         axs[i_stage].plot([0, 1], [0, 1], linestyle='--', color='k', label='random classifier', lw=1.)
@@ -411,12 +413,13 @@ def plot_roc_curve_outer_average(metrics_history_path: Path,
                 x, y = roc_hansen_point[0], roc_hansen_point[1]
                 axs[i_stage].plot(x, y, 'ko', markersize=4)
                 if i_point == 0:
-                    axs[i_stage].annotate('Hansen 2009', xy=(x, y), xytext=(x, y + 0.3), fontsize=6, arrowprops=dict(facecolor='black', arrowstyle='-|>', linewidth=0.5), horizontalalignment='center')
+                    axs[i_stage].annotate('Hansen 2009', xy=(x, y), xytext=(x, y + 0.3), fontsize=6, arrowprops=dict(facecolor='black', arrowstyle='-', linewidth=0.5), horizontalalignment='center')
                 else:
                     delta_x = x - roc_hansen_points[i_point-1][0]
                     delta_y = y - roc_hansen_points[i_point-1][1]
-                    axs[i_stage].annotate('', xy=(x, y), xytext=(x - delta_x, y + 0.3 - delta_y), arrowprops=dict(facecolor='black', arrowstyle='-|>', linewidth=0.5), horizontalalignment='center')
+                    axs[i_stage].annotate('', xy=(x, y), xytext=(x - delta_x, y + 0.3 - delta_y), arrowprops=dict(facecolor='black', arrowstyle='-', linewidth=0.5), horizontalalignment='center')
 
     fig.tight_layout()
     fig.savefig(roc_curve_outer_path, dpi=600)
+    plt.close(fig)
     plt.interactive(True)

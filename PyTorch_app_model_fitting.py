@@ -3,9 +3,9 @@ import glob
 import random
 
 import logger
-log = logger.setup_applevel_logger(file_name ='logs/GNN_muta_model.log')
+log = logger.setup_applevel_logger(file_name ='logs/GNN_muta_model_baseline.log')
 
-# import and configure pandas globally (this needs to be imported first as other modules import pandas too)
+# import and configure pandas globally
 import pandas as pd
 import pandas_config
 
@@ -16,8 +16,9 @@ import torch
 from torch.utils.data import random_split
 from torch.optim.lr_scheduler import LambdaLR
 
-from torch_geometric.loader import DataLoader
-from models.PyG_Dataset import PyG_Dataset
+from torch.utils.data import DataLoader
+# from torch_geometric.loader import DataLoader
+# from models.PyG_Dataset import PyG_Dataset
 
 from sklearn.model_selection import train_test_split
 
@@ -30,21 +31,24 @@ from itertools import product
 import random
 import math
 from datetime import datetime
-import re
+from pathlib import Path
+
+import torch
+from torch.utils.data import TensorDataset
 
 from sklearn.model_selection import StratifiedKFold
 
 from data.combine import create_sdf
 
-from models.DMPNN_GCN.DMPNN_GCN import DMPNN_GCN
-from models.Attentive_GCN.Attentive_GCN import Attentive_GCN
+from models.FFNN.FFNN import FFNNModel
 
 from models.metrics import (plot_metrics_convergence, consolidate_metrics_outer,
                             plot_metrics_convergence_outer_average, plot_roc_curve_outer_average)
-from models.train import train_eval
+from models.PyTorch_train import train_eval
 
 # set the device
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
 
 # set up the dataset
 flat_datasets = [
@@ -64,7 +68,7 @@ task_aggregation_cols = ['in vitro/in vivo', 'endpoint', 'assay', 'cell line/spe
 #                                           'Salmonella typhimurium (TA 1537)',
 #                                           'Salmonella typhimurium (TA 1538)',
 #                                           'Salmonella typhimurium (TA 97)',
-#                                           'Salmonella typhimurium (TA 98)']}
+#                                            'Salmonella typhimurium (TA 98)']}
 record_selection = {'cell line/species': ['Salmonella typhimurium (TA 100)',
                                           'Salmonella typhimurium (TA 98)',
                                           'Salmonella typhimurium (TA 1535)']}
@@ -90,99 +94,97 @@ BATCH_SIZE_MAX = 512 # maximum batch size (largest task, the smaller tasks are s
 K_FOLD_INNER = 5 # number of folds for the inner cross-validation
 K_FOLD_OUTER = 10 # number of folds for the outer cross-validation
 NUM_EPOCHS = 80 # number of epochs
-MODEL_NAME = 'Attentive_GCN' # name of the model, can be 'DMPNN_GCN' or 'Attentive_GCN'
+HANDLE_AMBIGUOUS = 'ignore' # how to handle ambiguous outcomes, can be 'keep', 'set_positive', 'set_negative' or 'ignore', but the model fitting does not support 'keep'
+MODEL_NAME = 'FFNN'
+LOG_EPOCH_FREQUENCY = 10 # frequency to log the metrics during training
 SCALE_LOSS_TASK_SIZE = None # how to scale the loss function, can be 'equal task' or None
 SCALE_LOSS_CLASS_SIZE = 'equal class (task)' # how to scale the loss function, can be 'equal class (task)', 'equal class (global)' or None
 
-HANDLE_AMBIGUOUS = 'ignore' # how to handle ambiguous outcomes, can be 'keep', 'set_positive', 'set_negative' or 'ignore', but the model fitting does not support 'keep'
-LOG_EPOCH_FREQUENCY = 10 # frequency to log the metrics during training
-
-
-
 # location to store the metrics logs
-metrics_history_path = Path(rf'D:\myApplications\local\2024_01_21_GCN_Muta\output\iteration55')/MODEL_NAME
+metrics_history_path = Path(rf'D:\myApplications\local\2024_01_21_GCN_Muta\output\iteration57')/MODEL_NAME
 metrics_history_path.mkdir(parents=True, exist_ok=True)
 
-# features, checkers and standardisers
-NODE_FEATS = ['atom_symbol', 'atom_charge', 'atom_degree', 'atom_hybridization', 'num_rings']
-EDGE_FEATS = ['bond_type', 'is_conjugated', 'num_rings'] # ['bond_type', 'is_conjugated', 'stereo_type']
+fingerprint_parameters = {'radius': 2,
+                          'fpSize': 2048,
+                          'type': 'binary' # 'binary', 'count'
+                          }
 
-# select model
-if MODEL_NAME == 'DMPNN_GCN':
-    model = DMPNN_GCN
-    model_parameters = {'n_conv': [3], # [1, 2, 3, 4, 5, 6]
-                        'n_lin': [2], # [1, 2, 3, 4]
-                        'n_conv_hidden': [64], # [32, 64, 128, 256]
-                        'n_edge_NN': [64], # [32, 64, 128, 256]
-                        'n_lin_hidden': [64], # [32, 64, 128, 256, 512]
-                        'dropout': [0.6], # [0.5, 0.6, 0.7, 0.8]
-                        'activation_function': [torch.nn.functional.leaky_relu],
-                        'learning_rate': [0.005],  # [0.001, 0.005, 0.01]
-                        'weight_decay': [1.e-3],  # [1.e-5, 1e-4, 1e-3]
-                        }
-elif MODEL_NAME == 'Attentive_GCN':
-    model = Attentive_GCN
-    model_parameters = {'hidden_channels': [256], # [64, 128, 256]
-                        'num_layers': [3], # [1, 2, 3, 4]
-                        'num_timesteps': [3], # [1, 2, 3, 4]
-                        'dropout': [0.0], # [0.5, 0.6, 0.7, 0.8]
-                        'learning_rate': [0.005], # [0.001, 0.005, 0.01]
-                        'weight_decay': [5.e-4],  # [1.e-5, 1e-4, 1.e-3]
-                        }
+model_parameters = {'hidden_layers': [[512, 512]],  # [64, 128, 256]
+                    'dropout': [0.7],  # [0.5, 0.6, 0.7, 0.8],
+                    'activation_function': [torch.nn.functional.leaky_relu],
+                    'learning_rate': [0.005],  # [0.001, 0.005, 0.01]
+                    'weight_decay': [5.e-3],  # [1.e-5, 1e-4, 1e-3]
+                    }
 
 
-# build the PyG datasets, no split at this stage
-dsets = {}
-for i_task, task in enumerate(tasks):
-    log.info(f'preparing PyG dataset for task: {task}')
-    entry = {}
-    dset = PyG_Dataset(root=Path(outp_sdf.parent.parent/f'PyTorch_Geometric_{i_task}'),
-                       task=task,
-                       node_feats=NODE_FEATS,
-                       edge_feats=EDGE_FEATS,
-                       ambiguous_outcomes=HANDLE_AMBIGUOUS,
-                       force_reload=True,
-                       )
-    dset.to(device) # all datasets are moved to the device
-    # store the dataset in the dset dictionary
-    entry['dset'] = dset
-    if len(dset) >= MINIMUM_TASK_DATASET:
-       dsets[task] = entry
-    else:
-        log.warning(f'task {task} has less than {MINIMUM_TASK_DATASET} data points, skipping')
+# read in the molecular structures from the SDF file, and compute fingerprints
+import json
+from cheminformatics.rdkit_toolkit import read_sdf
+from rdkit.Chem import AllChem
+from tqdm import tqdm
+fpgen = AllChem.GetMorganGenerator(radius=fingerprint_parameters['radius'], fpSize=fingerprint_parameters['fpSize'],
+                                   countSimulation=False)
+mols = read_sdf(outp_sdf)
+data = []
+for i_mol, mol in tqdm(enumerate(mols)):
+    tox_data = mol.GetProp('genotoxicity')
+    tox_data = pd.DataFrame(json.loads(tox_data))
+    # keep only positive and negative calls
+    tox_data = tox_data.loc[tox_data['genotoxicity'].isin(['positive', 'negative'])]
+    if not tox_data.empty:
+        fg = fpgen.GetFingerprint(mol)
+        fg_count = fpgen.GetCountFingerprint(mol)
+        if fingerprint_parameters['type'] == 'binary':
+            tox_data['fingerprint'] = fg.ToBitString()
+        elif fingerprint_parameters['type'] == 'count':
+            tox_data['fingerprint'] = ''.join([str(bit) for bit in fg_count.ToList()])
+        else:
+            ex = ValueError(f"unknown fingerprint type: {fingerprint_parameters}")
+            log.error(ex)
+            raise ex
+        tox_data['molecule ID'] = i_mol
+        data.append(tox_data)
+data = pd.concat(data, axis='index', ignore_index=True, sort=False)
 
-
+# features (fingerprints)
+X = data.groupby('molecule ID')['fingerprint'].first()
+X = np.array([[float(bit) for bit in list(fg)] for fg in X.to_list()], dtype=np.float32)
+# genotoxicity outcomes for each task
+task_outcomes = data.pivot(index='molecule ID',columns='task',values='genotoxicity')
 
 
 
 # outer and inner cross-validation splits (in the interest of reproducibility, the order is deterministic for all splits)
+# the indices stored aare the molecules IDs
 cv_outer = StratifiedKFold(n_splits=K_FOLD_OUTER, random_state=PYTORCH_SEED, shuffle=True)
 cv_inner = StratifiedKFold(n_splits=K_FOLD_INNER, random_state=PYTORCH_SEED, shuffle=True)
 splits = []
-for task in dsets:
-    dset = dsets[task]['dset']
-    y_task = [d.assay_data for d in dset]
+for task in task_outcomes.columns:
+    task_molecule_ids = pd.Series(task_outcomes[task].dropna().index)
+    y_task = task_outcomes[task].dropna().to_list()
     y_task_dist = dict(Counter(y_task))
     per_pos_task = 100 * y_task_dist['positive'] / len(y_task)
     log.info(f"task {task}: {len(y_task):4d} data points, positives: {y_task_dist['positive']:4d} ({per_pos_task:.2f}%)")
 
-    for i_outer, (tmp_indices, test_indices) in enumerate(cv_outer.split(range(len(dset)), y=y_task)):
-        y_outer_test = [d.assay_data for i, d in enumerate(dset) if i in test_indices]
+    for i_outer, (tmp_indices, test_indices) in enumerate(cv_outer.split(range(len(task_molecule_ids)), y=y_task)):
+        y_outer_test = [y_task[i_mol] for i_mol in test_indices]
         y_outer_test_dist = dict(Counter(y_outer_test))
         per_pos_test = 100 * y_outer_test_dist['positive'] / len(y_outer_test)
         log.info(f"task {task}, outer fold {i_outer}, test set: {len(y_outer_test):4d} data points, positives: {y_outer_test_dist['positive']:4d} ({per_pos_test:.2f}%)")
 
-        y_inner = [d.assay_data for i, d in enumerate(dset) if i in tmp_indices]
+        y_inner = [y_task[i_mol] for i_mol in tmp_indices]
         for i_inner, (train_indices, evaluate_indices) in enumerate(cv_inner.split(range(len(tmp_indices)), y=y_inner)):
-            train_indices = np.array([tmp_indices[i] for i in train_indices])
-            evaluate_indices = np.array([tmp_indices[i] for i in evaluate_indices])
-            y_inner_train = [d.assay_data for i, d in enumerate(dset) if i in train_indices]
+            train_indices = [tmp_indices[i] for i in train_indices]
+            evaluate_indices = [tmp_indices[i] for i in evaluate_indices]
+            y_inner_train = [y_task[i] for i in train_indices]
             y_inner_train_dist = dict(Counter(y_inner_train))
             per_pos_inner_train = 100 * y_inner_train_dist['positive'] / len(y_inner_train)
             log.info(f"task {task}, outer fold {i_outer}, inner fold {i_inner}, train set: {len(y_inner_train):4d} data points, positives: {y_inner_train_dist['positive']:4d} ({per_pos_inner_train:.2f}%)")
             entry = {'task': task, 'outer fold': i_outer, 'inner fold': i_inner,
-                     'train indices': train_indices, 'eval indices': evaluate_indices, 'test indices': test_indices,
-                     'task # data points': len(dset),
+                     'train indices': task_molecule_ids.iloc[train_indices],
+                     'eval indices': task_molecule_ids.iloc[evaluate_indices],
+                     'test indices': task_molecule_ids.iloc[test_indices],
+                     'task # data points': len(y_task),
                      'test # data points': len(test_indices),
                      'train # data points': len(train_indices),
                      'task %positives': per_pos_task,
@@ -191,16 +193,55 @@ for task in dsets:
                      }
             splits.append(entry)
 splits = pd.DataFrame(splits)
-for task in dsets:
+for task in task_outcomes.columns:
     tmp = splits.loc[splits['task']==task, ['task %positives', 'test %positives', 'train %positives']].describe().loc[['min', 'max']].to_markdown()
     log.info(f'task {task}, %positives in different splits\n{tmp}')
+
+
+# build the PyTorch datasets, no split at this stage
+dsets = {}
+for i_task, task in enumerate(task_outcomes.columns):
+    log.info(f'preparing PyTorch dataset for task: {task}')
+    entry = {}
+    if HANDLE_AMBIGUOUS == 'ignore':
+        msk = task_outcomes[task].isin(['positive', 'negative'])
+        task_molecule_ids = task_outcomes.loc[msk].index.to_list()
+        X_task = X[task_outcomes.index.isin(task_molecule_ids), :]
+        y_task = task_outcomes.loc[msk, task].apply(lambda genotoxicity: 1 if genotoxicity == 'positive' else 0).values
+    elif HANDLE_AMBIGUOUS == 'set_positive':
+        msk = task_outcomes[task].isin(['positive', 'negative', 'ambiguous'])
+        task_molecule_ids = task_outcomes.loc[msk].index.to_list()
+        X_task = X[task_outcomes.index.isin(task_molecule_ids), :]
+        y_task = task_outcomes.loc[msk, task].apply(lambda genotoxicity: 1 if genotoxicity == 'positive' or genotoxicity == 'ambiguous' else 0).values
+    elif HANDLE_AMBIGUOUS == 'set_negative':
+        msk = task_outcomes[task].isin(['positive', 'negative', 'ambiguous'])
+        task_molecule_ids = task_outcomes.loc[msk].index.to_list()
+        X_task = X[task_outcomes.index.isin(task_molecule_ids), :]
+        y_task = task_outcomes.loc[msk, task].apply(lambda genotoxicity: 1 if genotoxicity == 'positive' else 0).values
+    elif HANDLE_AMBIGUOUS == 'keep':
+        msk = task_outcomes[task].isin(['positive', 'negative', 'ambiguous'])
+        task_molecule_ids = task_outcomes.loc[msk].index.to_list()
+        X_task = X[task_outcomes.index.isin(task_molecule_ids), :]
+        y_task = task_outcomes.loc[msk, task].apply(lambda genotoxicity: 1 if genotoxicity == 'positive' else 0 if genotoxicity == 'negative' else 2).values
+    else:
+        ex = ValueError(f"unknown handling of ambiguous outcomes: {HANDLE_AMBIGUOUS}")
+        log.error(ex)
+        raise ex
+    dset = TensorDataset(torch.tensor(X_task), torch.tensor(y_task))
+    # dset.to(device) # all datasets are moved to the device
+    # store the dataset in the dset dictionary
+    entry['dset'] = dset
+    if len(dset) >= MINIMUM_TASK_DATASET:
+       dsets[task] = entry
+    else:
+        log.warning(f'task {task} has less than {MINIMUM_TASK_DATASET} data points, skipping')
 
 # compute the overall fraction of positives (for all tasks)
 y_all = []
 for task in dsets:
-    y_all.extend([d.assay_data for d in dsets[task]['dset']])
-fraction_positives = sum([1 for y in y_all if y == 'positive']) / len(y_all)
-
+    dest = dsets[task]['dset']
+    y_all.extend(dset.tensors[1].cpu().numpy().tolist())
+fraction_positives = sum([1 for y in y_all if y == 1]) / len(y_all)
 
 
 # set up the model configurations
@@ -215,6 +256,7 @@ log.info(f'number of configurations: {len(configurations)}')
 # .. shuffle to sample the configurations randomly
 random.seed(PYTORCH_SEED)
 random.shuffle(configurations)
+
 
 
 # outer loop of the nested cross-validation
@@ -243,11 +285,11 @@ for i_outer in range(K_FOLD_OUTER):
                 eval_set_size_max = max(len(idxs) for idxs in splits.loc[msk, 'eval indices'])  # largest eval set size among tasks
                 for task in dsets:
                     msk = (splits['outer fold'] == i_outer) & (splits['inner fold'] == i_inner) & (splits['task'] == task)
-                    train_set = dsets[task]['dset'].index_select(splits.loc[msk, 'train indices'].iloc[0].tolist())
+                    train_set = [rec for idx, rec in enumerate(dsets[task]['dset']) if idx in splits.loc[msk, 'train indices'].iloc[0].tolist()]
                     batch_size = round(BATCH_SIZE_MAX * len(train_set) / float(train_set_size_max))
                     train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True, drop_last=True) # .. we drop the last to have stable gradients
                     train_loaders.append(train_loader)
-                    eval_set = dsets[task]['dset'].index_select(splits.loc[msk, 'eval indices'].iloc[0].tolist())
+                    eval_set = [rec for idx, rec in enumerate(dsets[task]['dset']) if idx in splits.loc[msk, 'eval indices'].iloc[0].tolist()]
                     batch_size = round(BATCH_SIZE_MAX * len(eval_set) / float(eval_set_size_max))
                     eval_loader = DataLoader(eval_set, batch_size=batch_size, shuffle=True, drop_last=False)
                     eval_loaders.append(eval_loader)
@@ -258,12 +300,8 @@ for i_outer in range(K_FOLD_OUTER):
                     torch.cuda.manual_seed_all(PYTORCH_SEED)
 
                 # set the model
-                num_node_features = (train_loaders[0].dataset).num_node_features
-                num_edge_features = (train_loaders[0].dataset).num_edge_features
                 n_classes = [2] * len(dsets)
-                net = model(num_node_features=num_node_features, num_edge_features=num_edge_features,
-                                **model_parameters,
-                                n_classes=n_classes)
+                net = FFNNModel(n_input=fingerprint_parameters['fpSize'], **model_parameters, n_classes=n_classes)
                 net.to(device)
 
                 # if specified, scale the loss so that each class contributes according to its size or equally
@@ -296,7 +334,7 @@ for i_outer in range(K_FOLD_OUTER):
                 cols.update(configuration)
                 cols.update({'inner fold': i_inner})
                 for i_col, (col_name, col_value) in enumerate(cols.items()):
-                    metrics_history.insert(i_col, col_name, col_value)
+                    metrics_history.insert(i_col, col_name, str(col_value))
                 with open(metrics_history_path/'metrics_history.tsv', mode='at', encoding='utf-8', buffering=1, newline='') as f:
                     metrics_history.to_csv(f, header=f.tell()==0, index=False, sep='\t', lineterminator='\n')
 
@@ -321,6 +359,7 @@ for i_outer in range(K_FOLD_OUTER):
         log.info(f'outer fold {i_outer}, best configuration ID: {best_configuration_ID} with balanced accuracy: {balanced_accuracy_eval_inner_folds.max():.4} (range: {balanced_accuracy_eval_inner_folds.min():.4} - {balanced_accuracy_eval_inner_folds.max():.4})')
 
 
+
     # refit using the whole train + eval sets and evaluate in the test set
     msk = (splits['outer fold'] == i_outer) & (splits['inner fold'] == 0)
     train_eval_set_size_max = max(len(idxs_train.tolist()+idxs_eval.tolist()) for idxs_train, idxs_eval in zip(splits.loc[msk, 'train indices'], splits.loc[msk, 'eval indices']))
@@ -328,11 +367,11 @@ for i_outer in range(K_FOLD_OUTER):
     train_eval_loaders, test_loaders = [], []
     for task in dsets:
         msk = (splits['outer fold'] == i_outer) & (splits['inner fold'] == 0) & (splits['task'] == task)
-        train_eval_set = dsets[task]['dset'].index_select(splits.loc[msk, 'train indices'].iloc[0].tolist()+splits.loc[msk, 'eval indices'].iloc[0].tolist())
+        train_eval_set = [rec for idx, rec in enumerate(dsets[task]['dset']) if idx in splits.loc[msk, 'train indices'].iloc[0].tolist()+splits.loc[msk, 'eval indices'].iloc[0].tolist()]
         batch_size = math.ceil(BATCH_SIZE_MAX * len(train_eval_set) / float(train_eval_set_size_max))
         train_eval_loader = DataLoader(train_eval_set, batch_size=batch_size, shuffle=True, drop_last=True) # .. we drop the last to have stable gradients
         train_eval_loaders.append(train_eval_loader)
-        test_set = dsets[task]['dset'].index_select(splits.loc[msk, 'test indices'].iloc[0].tolist())
+        test_set = [rec for idx, rec in enumerate(dsets[task]['dset']) if idx in splits.loc[msk, 'test indices'].iloc[0].tolist()]
         batch_size = math.ceil(BATCH_SIZE_MAX * len(test_set) / float(test_set_size_max))
         test_loader = DataLoader(test_set, batch_size=batch_size, shuffle=True, drop_last=False)
         test_loaders.append(test_loader)
@@ -347,12 +386,8 @@ for i_outer in range(K_FOLD_OUTER):
     configuration_ID = configuration['configuration_ID']
     model_parameters = {k: v for k, v in configuration.items() if k not in ['configuration_ID', 'learning_rate', 'weight_decay']}
     optimiser_parameters = {k: v for k, v in configuration.items() if k in ['configuration_ID', 'learning_rate', 'weight_decay']}
-    num_node_features = (test_loaders[0].dataset).num_node_features
-    num_edge_features = (test_loaders[0].dataset).num_edge_features
     n_classes = [2] * len(dsets)
-    net = model(num_node_features=num_node_features, num_edge_features=num_edge_features,
-                    **model_parameters,
-                    n_classes=n_classes)
+    net = FFNNModel(n_input=fingerprint_parameters['fpSize'], **model_parameters, n_classes=n_classes)
     net.to(device)
 
     # if specified, scale the loss so that each class contributes according to its size or equally
@@ -393,7 +428,7 @@ for i_outer in range(K_FOLD_OUTER):
     cols.update(configuration)
     cols.update({'inner fold': None})
     for i_col, (col_name, col_value) in enumerate(cols.items()):
-        metrics_history.insert(i_col, col_name, col_value)
+        metrics_history.insert(i_col, col_name, str(col_value))
     metrics_history['stage'] = np.where(metrics_history['stage']=='train', 'train+eval', 'test')
     with open(metrics_history_path/'metrics_history.tsv', mode='at', encoding='utf-8', buffering=1, newline='') as f:
         metrics_history.to_csv(f, header=f.tell() == 0, index=False, sep='\t', lineterminator='\n')
@@ -404,6 +439,8 @@ for i_outer in range(K_FOLD_OUTER):
 
     # save the model
     torch.save(net, outp/'model.pth')
+
+
 
 
 # consolidate the metrics for each outer iteration and list the optimal configuration for each outer iteration
@@ -423,3 +460,8 @@ plot_metrics_convergence_outer_average(metrics_history_path/'metrics_history.tsv
 # plot the average ROC for all outer iterations (range is shown as a shaded area)
 roc_curve_outer_path = metrics_history_path/'roc_outer_average.png'
 plot_roc_curve_outer_average(metrics_history_path, roc_curve_outer_path)
+
+
+
+
+
