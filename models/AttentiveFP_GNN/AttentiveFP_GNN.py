@@ -73,7 +73,7 @@ class GATEConv(MessagePassing):
         return self.lin2(x_j) * alpha.unsqueeze(-1)
 
 
-class Attentive_GCN(torch.nn.Module):
+class AttentiveFP_GNN(torch.nn.Module):
     r"""The Attentive FP model for molecular representation learning from the
     `"Pushing the Boundaries of Molecular Representation for Drug Discovery
     with the Graph Attention Mechanism"

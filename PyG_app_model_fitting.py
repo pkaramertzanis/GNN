@@ -36,8 +36,9 @@ from sklearn.model_selection import StratifiedKFold
 
 from data.combine import create_sdf
 
-from models.DMPNN_GCN.DMPNN_GCN import DMPNN_GCN
-from models.Attentive_GCN.Attentive_GCN import Attentive_GCN
+from models.MPNN_GNN.MPNN_GNN import MPNN_GNN
+from models.AttentiveFP_GNN.AttentiveFP_GNN import AttentiveFP_GNN
+from models.GAT_GNN.GAT_GNN import GAT_GNN
 
 from models.metrics import (plot_metrics_convergence, consolidate_metrics_outer,
                             plot_metrics_convergence_outer_average, plot_roc_curve_outer_average)
@@ -56,21 +57,21 @@ task_aggregation_cols = ['in vitro/in vivo', 'endpoint', 'assay', 'cell line/spe
 # task_aggregation_cols = ['in vitro/in vivo', 'endpoint', 'assay', 'cell line/species']
 # task_aggregation_cols = ['in vitro/in vivo', 'endpoint', 'assay']
 # record_selection = {'assay': ['bacterial reverse mutation assay']}
-record_selection = {'cell line/species': ['Escherichia coli (WP2 Uvr A)',
-                                          'Salmonella typhimurium (TA 100)',
-                                          'Salmonella typhimurium (TA 102)',
-                                          'Salmonella typhimurium (TA 104)',
-                                          'Salmonella typhimurium (TA 1535)',
-                                          'Salmonella typhimurium (TA 1537)',
-                                          'Salmonella typhimurium (TA 1538)',
-                                          'Salmonella typhimurium (TA 97)',
-                                           'Salmonella typhimurium (TA 98)']}
+# record_selection = {'cell line/species': ['Escherichia coli (WP2 Uvr A)',
+#                                           'Salmonella typhimurium (TA 100)',
+#                                           'Salmonella typhimurium (TA 102)',
+#                                           'Salmonella typhimurium (TA 104)',
+#                                           'Salmonella typhimurium (TA 1535)',
+#                                           'Salmonella typhimurium (TA 1537)',
+#                                           'Salmonella typhimurium (TA 1538)',
+#                                           'Salmonella typhimurium (TA 97)',
+#                                            'Salmonella typhimurium (TA 98)']}
 # record_selection = {'cell line/species': ['Salmonella typhimurium (TA 100)',
 #                                           'Salmonella typhimurium (TA 98)',
 #                                           'Salmonella typhimurium (TA 1535)']}
-# record_selection = {'cell line/species': ['Salmonella typhimurium (TA 1535)'],
-#                     'metabolic activation': ['no']
-#                      }
+record_selection = {'cell line/species': ['Salmonella typhimurium (TA 1535)'],
+                    'metabolic activation': ['no']
+                     }
 # record_selection = {'cell line/species': ['Salmonella typhimurium (TA 100)']}
 # record_selection = None
 outp_sdf = Path(r'data/combined/sdf/genotoxicity_dataset.sdf')
@@ -90,7 +91,7 @@ BATCH_SIZE_MAX = 512 # maximum batch size (largest task, the smaller tasks are s
 K_FOLD_INNER = 5 # number of folds for the inner cross-validation
 K_FOLD_OUTER = 10 # number of folds for the outer cross-validation
 NUM_EPOCHS = 80 # number of epochs
-MODEL_NAME = 'Attentive_GCN' # name of the model, can be 'DMPNN_GCN' or 'Attentive_GCN'
+MODEL_NAME = 'GAT_GNN' # name of the model, can be 'MPNN_GNN', 'AttentiveFP_GNN' or 'GAT_GNN'
 SCALE_LOSS_TASK_SIZE = None # how to scale the loss function, can be 'equal task' or None
 SCALE_LOSS_CLASS_SIZE = 'equal class (task)' # how to scale the loss function, can be 'equal class (task)', 'equal class (global)' or None
 
@@ -100,7 +101,7 @@ LOG_EPOCH_FREQUENCY = 10 # frequency to log the metrics during training
 
 
 # location to store the metrics logs
-metrics_history_path = Path(rf'D:\myApplications\local\2024_01_21_GCN_Muta\output\iteration56')/MODEL_NAME
+metrics_history_path = Path(rf'D:\myApplications\local\2024_01_21_GCN_Muta\output\iteration61')/MODEL_NAME
 metrics_history_path.mkdir(parents=True, exist_ok=True)
 
 # features, checkers and standardisers
@@ -108,10 +109,10 @@ NODE_FEATS = ['atom_symbol', 'atom_charge', 'atom_degree', 'atom_hybridization',
 EDGE_FEATS = ['bond_type', 'is_conjugated', 'num_rings'] # ['bond_type', 'is_conjugated', 'stereo_type']
 
 # select model
-if MODEL_NAME == 'DMPNN_GCN':
-    model = DMPNN_GCN
+if MODEL_NAME == 'MPNN_GNN':
+    model = MPNN_GNN
     model_parameters = {'n_conv': [3], # [1, 2, 3, 4, 5, 6]
-                        'n_lin': [2], # [1, 2, 3, 4]
+                        'n_lin': [1], # 1, 2, 3, 4]
                         'n_conv_hidden': [64], # [32, 64, 128, 256]
                         'n_edge_NN': [64], # [32, 64, 128, 256]
                         'n_lin_hidden': [64], # [32, 64, 128, 256, 512]
@@ -120,15 +121,29 @@ if MODEL_NAME == 'DMPNN_GCN':
                         'learning_rate': [0.005],  # [0.001, 0.005, 0.01]
                         'weight_decay': [1.e-3],  # [1.e-5, 1e-4, 1e-3]
                         }
-elif MODEL_NAME == 'Attentive_GCN':
-    model = Attentive_GCN
+elif MODEL_NAME == 'AttentiveFP_GNN':
+    model = AttentiveFP_GNN
     model_parameters = {'hidden_channels': [256], # [64, 128, 256]
-                        'num_layers': [3], # [1, 2, 3, 4]
-                        'num_timesteps': [3], # [1, 2, 3, 4]
+                        'num_layers': [2], # [1, 2, 3, 4]
+                        'num_timesteps': [2], # [1, 2, 3, 4]
                         'dropout': [0.0], # [0.5, 0.6, 0.7, 0.8]
                         'learning_rate': [0.005], # [0.001, 0.005, 0.01]
                         'weight_decay': [5.e-4],  # [1.e-5, 1e-4, 1.e-3]
                         }
+elif MODEL_NAME == 'GAT_GNN':
+    model = GAT_GNN
+    model_parameters = {'n_conv': [6],
+                        'n_lin': [1],  # 1, 2, 3, 4]
+                        'n_heads': [4],
+                        'n_conv_hidden': [256],
+                        'n_lin_hidden': [128],  # [32, 64, 128, 256, 512]
+                        'v2': [True], # [True, False]
+                        'dropout': [0.2],
+                        'activation_function': [torch.nn.functional.leaky_relu],
+                        'learning_rate': [0.005],  # [0.001, 0.005, 0.01]
+                        'weight_decay': [1.e-4],  # [1.e-5, 1e-4, 1e-3]
+                        }
+
 
 
 # build the PyG datasets, no split at this stage

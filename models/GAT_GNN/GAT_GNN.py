@@ -5,62 +5,74 @@ from typing import Callable
 
 import torch
 import torch.nn as nn
-from torch_geometric.nn import NNConv, global_add_pool
+from torch_geometric.nn import GAT, global_add_pool
 
-class DMPNN_GCN(torch.nn.Module):
+class GAT_GNN(torch.nn.Module):
     def __init__(self,
                  num_node_features: int,
                  num_edge_features: int,
                  n_conv: int,
-                 n_edge_NN: int,
+                 n_heads: int,
                  n_conv_hidden: int,
+                 v2: bool,
                  n_lin: int,
                  n_lin_hidden: int,
                  dropout: float,
                  activation_function: Callable,
                  n_classes: [int]):
         """
-        Implements the GCN multitask classifier in PyTorch Geometric
+        Implements the GAT multitask classifier in PyTorch Geometric
         :param num_node_features: number of node features
         :param num_edge_features: number of edge features
-        :param n_conv: number of convolutional layers
-        :param n_edge_NN: number of neurons in the edge FNN
+
+        :param n_conv: number of message passing (convolutional) layers
         :param n_conv_hidden: number of hidden features in the convolutional layers
-        :param n_lin: number of linear layers
-        :param n_lin_hidden: number of hidden features in the linear layers
+        :param n_heads: number of multi-head-attentions
+        :param v2: if True, use the GATv2 implementation, otherwise use the original GAT implementation
+
         :param dropout: dropout rate
         :param activation_function: PyTorch activation function, e.g. torch.nn.functional.relu or torch.nn.functional.leaky_relu
         :param n_classes: array with the number of output classes in each classification task
+
+        :param n_lin: number of linear layers
+        :param n_lin_hidden: number of hidden features in the linear layers
+
+        See
+        https://pytorch-geometric.readthedocs.io/en/latest/generated/torch_geometric.nn.models.GAT.html#torch_geometric.nn.models.GAT (and its base class)
+        https://pytorch-geometric.readthedocs.io/en/latest/generated/torch_geometric.nn.conv.GATConv.html#torch_geometric.nn.conv.GATConv
+
         """
         super().__init__()
+
+        # number of node and edge features
+        self.num_node_features = num_node_features
+        self.num_edge_features = num_edge_features
+
+        # number of message passing layers
+        self.n_conv = n_conv
+
+        # number of hidden features in the convolutional layers
+        self.n_conv_hidden = n_conv_hidden
+
+        # number of heads in the multi-head-attention
+        self.n_heads = n_heads
+
+        # GATconv version
+        self.v2 = v2
+
+        # linear layers' parameters
+        self.n_lin = n_lin
+        self.n_lin_hidden = n_lin_hidden
 
         # general parameters
         self.dropout = dropout
         self.activation_function = activation_function
         self.n_classes = n_classes
 
-        # convolutional layers' parameters
-        self.n_conv = n_conv
-        self.n_edge_NN = n_edge_NN
-        self.n_conv_hidden = n_conv_hidden
-
-        # linear layers' parameters
-        self.n_lin = n_lin
-        self.n_lin_hidden = n_lin_hidden
-
-        # set up the convolutional layers
-        self.conv_layers = torch.nn.ModuleList()
-        # first convolutional layer
-        conv_net = nn.Sequential(nn.Linear(num_edge_features, self.n_edge_NN),
-                                 nn.LeakyReLU(),
-                                 nn.Linear(self.n_edge_NN, num_node_features * self.n_conv_hidden))
-        self.conv_layers.append(NNConv(num_node_features, self.n_conv_hidden, conv_net))
-        # remaining of the convolutional layers
-        for i_conv in range(self.n_conv-1):
-            conv_net = nn.Sequential(nn.Linear(num_edge_features, self.n_edge_NN),
-                                     nn.LeakyReLU(),
-                                     nn.Linear(self.n_edge_NN, self.n_conv_hidden * self.n_conv_hidden))
-            self.conv_layers.append(NNConv(self.n_conv_hidden, self.n_conv_hidden, conv_net))
+        # set up the base GAT model
+        # because we do not set out_channels the output size will be self.n_conv_hidden
+        self.gat = GAT(num_node_features, self.n_conv_hidden, num_layers=self.n_conv, out_channels=None,
+                       v2=self.v2, dropout=self.dropout, heads=self.n_heads)
 
         # set up the linear layers
         self.lin_layers = torch.nn.ModuleList()
@@ -84,15 +96,12 @@ class DMPNN_GCN(torch.nn.Module):
             if 'bias' in name:
                 torch.nn.init.constant_(param, 0.)
 
-    # def forward(self, data):
-    #     batch, x, edge_index, edge_attr = data.batch, data.x, data.edge_index, data.edge_attr
 
     def forward(self, x: torch.Tensor, edge_index: torch.Tensor, edge_attr: torch.Tensor, batch: torch.Tensor, task_id: int):
 
         # apply the convolutional layers
-        for module in self.conv_layers:
-            x = self.activation_function(module(x, edge_index, edge_attr))
-            # x = self.dropout(x)
+        x = self.gat(x, edge_index, edge_attr)
+        # x = self.dropout(x)
 
         # pooling
         x = global_add_pool(x, batch)
@@ -105,3 +114,4 @@ class DMPNN_GCN(torch.nn.Module):
         # apply the output layer (classification, produces logits)
         output = self.out_layers[task_id](x)
         return output
+

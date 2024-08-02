@@ -15,7 +15,7 @@ from torch_geometric.loader import DataLoader
 
 import matplotlib.pyplot as plt
 
-from models.DMPNN_GCN import DMPNN_GCN
+from models.MPNN_GNN import MPNN_GNN
 from models.metrics import compute_metrics
 
 from utilities import zip_recycle

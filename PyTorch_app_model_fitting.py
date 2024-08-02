@@ -101,7 +101,7 @@ SCALE_LOSS_TASK_SIZE = None # how to scale the loss function, can be 'equal task
 SCALE_LOSS_CLASS_SIZE = 'equal class (task)' # how to scale the loss function, can be 'equal class (task)', 'equal class (global)' or None
 
 # location to store the metrics logs
-metrics_history_path = Path(rf'D:\myApplications\local\2024_01_21_GCN_Muta\output\iteration57')/MODEL_NAME
+metrics_history_path = Path(rf'D:\myApplications\local\2024_01_21_GCN_Muta\output\iteration59')/MODEL_NAME
 metrics_history_path.mkdir(parents=True, exist_ok=True)
 
 fingerprint_parameters = {'radius': 2,
@@ -110,10 +110,10 @@ fingerprint_parameters = {'radius': 2,
                           }
 
 model_parameters = {'hidden_layers': [[512, 512]],  # [64, 128, 256]
-                    'dropout': [0.7],  # [0.5, 0.6, 0.7, 0.8],
+                    'dropout': [0.5],  # [0.5, 0.6, 0.7, 0.8],
                     'activation_function': [torch.nn.functional.leaky_relu],
                     'learning_rate': [0.005],  # [0.001, 0.005, 0.01]
-                    'weight_decay': [5.e-3],  # [1.e-5, 1e-4, 1e-3]
+                    'weight_decay': [2.e-2],  # [1.e-5, 1e-4, 1e-3]
                     }
 
 
