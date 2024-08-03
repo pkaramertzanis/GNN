@@ -64,15 +64,19 @@ class MPNN_GNN(torch.nn.Module):
 
         # set up the linear layers
         self.lin_layers = torch.nn.ModuleList()
-        self.lin_layers.append(torch.nn.Linear(self.n_conv_hidden, self.n_lin_hidden))
-        self.lin_layers.extend(
-            [torch.nn.Linear(self.n_lin_hidden, self.n_lin_hidden)
-             for i in range(self.n_lin-1)])
+        if self.n_lin > 0:
+            self.lin_layers.append(torch.nn.Linear(self.n_conv_hidden, self.n_lin_hidden))
+            self.lin_layers.extend(
+                [torch.nn.Linear(self.n_lin_hidden, self.n_lin_hidden)
+                 for i in range(self.n_lin-1)])
 
         # set up the output layers, one for each task
         self.out_layers = torch.nn.ModuleList()
         for n_class in self.n_classes:
-            self.out_layers.append(torch.nn.Linear(self.n_lin_hidden, n_class))
+            if self.n_lin > 0:
+                self.out_layers.append(torch.nn.Linear(self.n_lin_hidden, n_class))
+            else:
+                self.out_layers.append(torch.nn.Linear(self.n_conv_hidden, n_class))
 
         # dropout layer
         self.dropout = torch.nn.Dropout(dropout)

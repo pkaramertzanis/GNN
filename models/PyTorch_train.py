@@ -150,75 +150,76 @@ def train_eval(net,
             tmp.update(compute_metrics(tp.item(), tn.item(), fp.item(), fn.item()))
             metrics_epoch.append(tmp)
 
-            # report the metrics for the epoch (for each task)
-            for i_task in range(len(train_loaders)):
-                tmp = pd.DataFrame(metrics_epoch)
-                msk = (tmp['stage'] == 'train') & (tmp['type'] == 'raw') & (tmp['task'] == i_task)
-                tmp = tmp.loc[msk]
-                loss_mean = (tmp['number of datapoints']*tmp['loss (mean)']).sum()/tmp['number of datapoints'].sum()
-                tp, tn, fp, fn, number_of_datapoints = tmp['tp'].sum(), tmp['tn'].sum(), tmp['fp'].sum(), tmp['fn'].sum(), tmp['number of datapoints'].sum()
-                tmp = {'epoch': i_epoch, 'batch': None, 'task': i_task, 'stage': 'train', 'type': 'aggregate (epoch)', 'number of datapoints': number_of_datapoints}
-                tmp['loss (mean)'] = loss_mean
-                tmp.update(compute_metrics(tp.item(), tn.item(), fp.item(), fn.item()))
+            with torch.no_grad():
+                # report the metrics for the epoch (for each task)
+                for i_task in range(len(train_loaders)):
+                    tmp = pd.DataFrame(metrics_epoch)
+                    msk = (tmp['stage'] == 'train') & (tmp['type'] == 'raw') & (tmp['task'] == i_task)
+                    tmp = tmp.loc[msk]
+                    loss_mean = (tmp['number of datapoints']*tmp['loss (mean)']).sum()/tmp['number of datapoints'].sum()
+                    tp, tn, fp, fn, number_of_datapoints = tmp['tp'].sum(), tmp['tn'].sum(), tmp['fp'].sum(), tmp['fn'].sum(), tmp['number of datapoints'].sum()
+                    tmp = {'epoch': i_epoch, 'batch': None, 'task': i_task, 'stage': 'train', 'type': 'aggregate (epoch)', 'number of datapoints': number_of_datapoints}
+                    tmp['loss (mean)'] = loss_mean
+                    tmp.update(compute_metrics(tp.item(), tn.item(), fp.item(), fn.item()))
 
-                # compute the ROC AUC for the train set
-                prob_train_epoch = []
-                y_train_epoch = []
-                for task_batch in train_loaders[i_task]:
-                    pred = net(task_batch[0], task_id=i_task)
-                    prob_train_epoch.append(torch.nn.functional.softmax(pred, dim=1).detach().cpu().numpy())
-                    y_train_epoch.append(task_batch[1].cpu().numpy())
-                prob_train_epoch = np.concatenate(prob_train_epoch, axis=0)
-                y_train_epoch = np.concatenate(y_train_epoch, axis=0)
-                roc_auc_train =  roc_auc_score(y_train_epoch, prob_train_epoch[:, 1])
-                roc_train = roc_curve(y_train_epoch, prob_train_epoch[:, 1])
-                tmp['roc auc'] = roc_auc_train
-                tmp['roc'] = roc_train # tuple with fpr, tpr, thresholds
+                    # compute the ROC AUC for the train set
+                    prob_train_epoch = []
+                    y_train_epoch = []
+                    for task_batch in train_loaders[i_task]:
+                        pred = net(task_batch[0], task_id=i_task)
+                        prob_train_epoch.append(torch.nn.functional.softmax(pred, dim=1).detach().cpu().numpy())
+                        y_train_epoch.append(task_batch[1].cpu().numpy())
+                    prob_train_epoch = np.concatenate(prob_train_epoch, axis=0)
+                    y_train_epoch = np.concatenate(y_train_epoch, axis=0)
+                    roc_auc_train =  roc_auc_score(y_train_epoch, prob_train_epoch[:, 1])
+                    roc_train = roc_curve(y_train_epoch, prob_train_epoch[:, 1])
+                    tmp['roc auc'] = roc_auc_train
+                    tmp['roc'] = roc_train # tuple with fpr, tpr, thresholds
 
-                metrics_epoch.append(tmp)
+                    metrics_epoch.append(tmp)
 
-            # evaluate the model on the eval set
-            for i_batch, batches in enumerate(zip_recycle(*eval_loaders)):
-                metrics_batch = []
-                loss = torch.tensor(0.)
-                n_datapoints = 0
-                total_batch_size = sum([len(task_batch[0]) for task_batch in batches])
-                for i_task, task_batch in enumerate(batches):
-                    metrics_batch_task = {'epoch': i_epoch, 'batch': i_batch, 'task': i_task, 'stage': 'eval', 'type': 'raw', 'number of datapoints': len(task_batch[0])}
-                    n_datapoints += len(task_batch[0])
+                # evaluate the model on the eval set
+                for i_batch, batches in enumerate(zip_recycle(*eval_loaders)):
+                    metrics_batch = []
+                    loss = torch.tensor(0.)
+                    n_datapoints = 0
+                    total_batch_size = sum([len(task_batch[0]) for task_batch in batches])
+                    for i_task, task_batch in enumerate(batches):
+                        metrics_batch_task = {'epoch': i_epoch, 'batch': i_batch, 'task': i_task, 'stage': 'eval', 'type': 'raw', 'number of datapoints': len(task_batch[0])}
+                        n_datapoints += len(task_batch[0])
 
-                    y = task_batch[1].cpu().numpy().tolist()
-                    fraction_positives = sum(y)/float(len(y))
-                    y = torch.tensor(y, dtype=torch.long).to(device)
+                        y = task_batch[1].cpu().numpy().tolist()
+                        fraction_positives = sum(y)/float(len(y))
+                        y = torch.tensor(y, dtype=torch.long).to(device)
 
-                    pred = net(task_batch[0], task_id=i_task)
+                        pred = net(task_batch[0], task_id=i_task)
 
-                    # true positive, true negative, false positive, and false negative counts for each task
-                    pred_class = torch.argmax(pred, dim=1).detach()
-                    tp = ((pred_class == y) & (y == 1)).int().sum().item()
-                    tn = ((pred_class == y) & (y == 0)).int().sum().item()
-                    fp = ((pred_class != y) & (y == 0)).int().sum().item()
-                    fn = ((pred_class != y) & (y == 1)).int().sum().item()
+                        # true positive, true negative, false positive, and false negative counts for each task
+                        pred_class = torch.argmax(pred, dim=1).detach()
+                        tp = ((pred_class == y) & (y == 1)).int().sum().item()
+                        tn = ((pred_class == y) & (y == 0)).int().sum().item()
+                        fp = ((pred_class != y) & (y == 0)).int().sum().item()
+                        fn = ((pred_class != y) & (y == 1)).int().sum().item()
 
-                    # if the loss function is not specified, we define a loss function per task/batch by scaling the positives
-                    if global_loss_fn is None:
-                        loss_fn = torch.nn.CrossEntropyLoss(
-                            weight=torch.tensor([fraction_positives, 1. - fraction_positives]))
-                    else:
-                        loss_fn = global_loss_fn
+                        # if the loss function is not specified, we define a loss function per task/batch by scaling the positives
+                        if global_loss_fn is None:
+                            loss_fn = torch.nn.CrossEntropyLoss(
+                                weight=torch.tensor([fraction_positives, 1. - fraction_positives]))
+                        else:
+                            loss_fn = global_loss_fn
 
-                    loss_task = loss_fn(pred, y) # this is mean loss (default)
+                        loss_task = loss_fn(pred, y) # this is mean loss (default)
 
-                    # if specified, scale the loss so that each task contributes according to its size or equally
-                    if scale_loss_task_size is None:
-                        loss += loss_task * len(task_batch[0])
-                    elif scale_loss_task_size == 'equal task':
-                        loss += loss_task * (total_batch_size / len(batches))
+                        # if specified, scale the loss so that each task contributes according to its size or equally
+                        if scale_loss_task_size is None:
+                            loss += loss_task * len(task_batch[0])
+                        elif scale_loss_task_size == 'equal task':
+                            loss += loss_task * (total_batch_size / len(batches))
 
-                    metrics_batch_task['loss (mean)'] = loss_task.item()
-                    metrics_batch_task.update(compute_metrics(tp, tn, fp, fn))
+                        metrics_batch_task['loss (mean)'] = loss_task.item()
+                        metrics_batch_task.update(compute_metrics(tp, tn, fp, fn))
 
-                    metrics_batch.append(metrics_batch_task)
+                        metrics_batch.append(metrics_batch_task)
 
                 # report the metrics for the batch
                 tmp = pd.DataFrame(metrics_batch)

@@ -17,6 +17,7 @@ from torch.utils.data import random_split
 from torch.optim.lr_scheduler import LambdaLR
 
 from torch_geometric.loader import DataLoader
+from torch_geometric.nn import summary
 from models.PyG_Dataset import PyG_Dataset
 
 from sklearn.model_selection import train_test_split
@@ -31,6 +32,7 @@ import random
 import math
 from datetime import datetime
 import re
+import json
 
 from sklearn.model_selection import StratifiedKFold
 
@@ -57,21 +59,21 @@ task_aggregation_cols = ['in vitro/in vivo', 'endpoint', 'assay', 'cell line/spe
 # task_aggregation_cols = ['in vitro/in vivo', 'endpoint', 'assay', 'cell line/species']
 # task_aggregation_cols = ['in vitro/in vivo', 'endpoint', 'assay']
 # record_selection = {'assay': ['bacterial reverse mutation assay']}
-# record_selection = {'cell line/species': ['Escherichia coli (WP2 Uvr A)',
-#                                           'Salmonella typhimurium (TA 100)',
-#                                           'Salmonella typhimurium (TA 102)',
-#                                           'Salmonella typhimurium (TA 104)',
-#                                           'Salmonella typhimurium (TA 1535)',
-#                                           'Salmonella typhimurium (TA 1537)',
-#                                           'Salmonella typhimurium (TA 1538)',
-#                                           'Salmonella typhimurium (TA 97)',
-#                                            'Salmonella typhimurium (TA 98)']}
+#  record_selection = {'cell line/species': ['Escherichia coli (WP2 Uvr A)',
+#                                            'Salmonella typhimurium (TA 100)',
+#                                            'Salmonella typhimurium (TA 102)',
+#                                            'Salmonella typhimurium (TA 104)',
+#                                            'Salmonella typhimurium (TA 1535)',
+#                                            'Salmonella typhimurium (TA 1537)',
+#                                            'Salmonella typhimurium (TA 1538)',
+#                                            'Salmonella typhimurium (TA 97)',
+#                                             'Salmonella typhimurium (TA 98)']}
 # record_selection = {'cell line/species': ['Salmonella typhimurium (TA 100)',
 #                                           'Salmonella typhimurium (TA 98)',
 #                                           'Salmonella typhimurium (TA 1535)']}
-record_selection = {'cell line/species': ['Salmonella typhimurium (TA 1535)'],
-                    'metabolic activation': ['no']
-                     }
+record_selection = {'cell line/species': ['Salmonella typhimurium (TA 100)'],
+                    'metabolic activation': ['yes']
+                    }
 # record_selection = {'cell line/species': ['Salmonella typhimurium (TA 100)']}
 # record_selection = None
 outp_sdf = Path(r'data/combined/sdf/genotoxicity_dataset.sdf')
@@ -101,7 +103,7 @@ LOG_EPOCH_FREQUENCY = 10 # frequency to log the metrics during training
 
 
 # location to store the metrics logs
-metrics_history_path = Path(rf'D:\myApplications\local\2024_01_21_GCN_Muta\output\iteration61')/MODEL_NAME
+metrics_history_path = Path(rf'D:\myApplications\local\2024_01_21_GCN_Muta\output\iteration63')/MODEL_NAME
 metrics_history_path.mkdir(parents=True, exist_ok=True)
 
 # features, checkers and standardisers
@@ -133,7 +135,7 @@ elif MODEL_NAME == 'AttentiveFP_GNN':
 elif MODEL_NAME == 'GAT_GNN':
     model = GAT_GNN
     model_parameters = {'n_conv': [6],
-                        'n_lin': [1],  # 1, 2, 3, 4]
+                        'n_lin': [0],  # 1, 2, 3, 4]
                         'n_heads': [4],
                         'n_conv_hidden': [256],
                         'n_lin_hidden': [128],  # [32, 64, 128, 256, 512]
@@ -302,7 +304,12 @@ for i_outer in range(K_FOLD_OUTER):
                 # train the model
                 outp = metrics_history_path/f'outer_fold_{i_outer}_configuration_ID_{configuration_ID}_inner_fold_{i_inner}'
                 outp.mkdir(parents=True, exist_ok=True)
-                metrics_history = train_eval(net, train_loaders, eval_loaders, global_loss_fn, optimizer, scheduler, NUM_EPOCHS, outp/'model_weights_diff_quantiles.tsv', log_epoch_frequency=LOG_EPOCH_FREQUENCY, scale_loss_task_size=SCALE_LOSS_TASK_SIZE)
+                metrics_history, model_summary = train_eval(net, train_loaders, eval_loaders, global_loss_fn, optimizer, scheduler, NUM_EPOCHS, outp/'model_weights_diff_quantiles.tsv', log_epoch_frequency=LOG_EPOCH_FREQUENCY, scale_loss_task_size=SCALE_LOSS_TASK_SIZE)
+
+                # store the model summary
+                with open(outp / 'model_summary.txt', mode='wt', encoding='utf-8') as f:
+                    for task_summary in model_summary:
+                        f.write(f"task: {task_summary['task']}\n{task_summary['summary']}\n")
 
                 # log the metrics for the training set and evaluation set
                 metrics_history = pd.DataFrame(metrics_history)
@@ -392,7 +399,12 @@ for i_outer in range(K_FOLD_OUTER):
     # train the model, double the number of epochs for the final training
     outp = metrics_history_path/f'outer_fold_{i_outer}_configuration_ID_{configuration_ID}'
     outp.mkdir(parents=True, exist_ok=True)
-    metrics_history = train_eval(net, train_eval_loaders, test_loaders, global_loss_fn, optimizer, scheduler, 2*NUM_EPOCHS, outp=None, log_epoch_frequency=LOG_EPOCH_FREQUENCY, scale_loss_task_size=SCALE_LOSS_TASK_SIZE)
+    metrics_history, model_summary = train_eval(net, train_eval_loaders, test_loaders, global_loss_fn, optimizer, scheduler, 2*NUM_EPOCHS, outp=None, log_epoch_frequency=LOG_EPOCH_FREQUENCY, scale_loss_task_size=SCALE_LOSS_TASK_SIZE)
+
+    # store the model summary
+    with open(outp / 'model_summary.txt', mode='wt', encoding='utf-8') as f:
+        for task_summary in model_summary:
+            f.write(f"task: {task_summary['task']}\n{task_summary['summary']}\n")
 
     # log the metrics for the training set and evaluation set
     metrics_history = pd.DataFrame(metrics_history)
