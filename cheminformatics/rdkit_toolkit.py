@@ -116,11 +116,12 @@ def get_node_features(mol: Chem.Mol, feats=None) -> pd.DataFrame:
                   'atom_hybridization' -> atom hybridization (str)
                   'atom_mass' -> atom mass (float64)
                   'num_rings' -> number of rings the atom is part of (int64)
+                  'num_Hs' -> number of hydrogen atoms (int64)
     :return: pandas dataframe with node features with shape [number_of_atoms, len(feats)]
     """
 
     if feats is None:
-        feats = ['atom_symbol', 'atom_charge', 'atom_degree', 'atom_hybridization', 'atom_mass', 'num_rings']
+        feats = ['atom_symbol', 'atom_charge', 'atom_degree', 'atom_hybridization', 'atom_mass', 'num_rings', 'num_Hs']
 
     # get the ring information if num_rings is requested
     if'num_rings' in feats:
@@ -149,6 +150,8 @@ def get_node_features(mol: Chem.Mol, feats=None) -> pd.DataFrame:
                     node_feats[feat] = atom.GetMass()
                 elif feat == 'num_rings':
                     node_feats[feat] = atom_ring_counts[atom.GetIdx()]
+                elif feat == 'num_Hs':
+                    node_feats[feat] = atom.GetTotalNumHs()
                 else:
                     raise ValueError(f'node feature {feat} not recognised')
             except Exception as ex:

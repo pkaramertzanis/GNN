@@ -68,12 +68,13 @@ task_aggregation_cols = ['in vitro/in vivo', 'endpoint', 'assay', 'cell line/spe
 #                                            'Salmonella typhimurium (TA 1538)',
 #                                            'Salmonella typhimurium (TA 97)',
 #                                             'Salmonella typhimurium (TA 98)']}
-# record_selection = {'cell line/species': ['Salmonella typhimurium (TA 100)',
-#                                           'Salmonella typhimurium (TA 98)',
-#                                           'Salmonella typhimurium (TA 1535)']}
-record_selection = {'cell line/species': ['Salmonella typhimurium (TA 100)'],
-                    'metabolic activation': ['yes']
-                    }
+record_selection = {'cell line/species': ['Salmonella typhimurium (TA 100)',
+                                          'Salmonella typhimurium (TA 98)',
+                                          'Salmonella typhimurium (TA 1535)'
+                                          ]}
+# record_selection = {'cell line/species': ['Salmonella typhimurium (TA 98)'],
+#                     'metabolic activation': ['no']
+#                     }
 # record_selection = {'cell line/species': ['Salmonella typhimurium (TA 100)']}
 # record_selection = None
 outp_sdf = Path(r'data/combined/sdf/genotoxicity_dataset.sdf')
@@ -93,7 +94,7 @@ BATCH_SIZE_MAX = 512 # maximum batch size (largest task, the smaller tasks are s
 K_FOLD_INNER = 5 # number of folds for the inner cross-validation
 K_FOLD_OUTER = 10 # number of folds for the outer cross-validation
 NUM_EPOCHS = 80 # number of epochs
-MODEL_NAME = 'GAT_GNN' # name of the model, can be 'MPNN_GNN', 'AttentiveFP_GNN' or 'GAT_GNN'
+MODEL_NAME = 'MPNN_GNN' # name of the model, can be 'MPNN_GNN', 'AttentiveFP_GNN' or 'GAT_GNN'
 SCALE_LOSS_TASK_SIZE = None # how to scale the loss function, can be 'equal task' or None
 SCALE_LOSS_CLASS_SIZE = 'equal class (task)' # how to scale the loss function, can be 'equal class (task)', 'equal class (global)' or None
 
@@ -103,11 +104,11 @@ LOG_EPOCH_FREQUENCY = 10 # frequency to log the metrics during training
 
 
 # location to store the metrics logs
-metrics_history_path = Path(rf'D:\myApplications\local\2024_01_21_GCN_Muta\output\iteration63')/MODEL_NAME
+metrics_history_path = Path(rf'D:\myApplications\local\2024_01_21_GCN_Muta\output\iteration68')/MODEL_NAME
 metrics_history_path.mkdir(parents=True, exist_ok=True)
 
 # features, checkers and standardisers
-NODE_FEATS = ['atom_symbol', 'atom_charge', 'atom_degree', 'atom_hybridization', 'num_rings']
+NODE_FEATS = ['atom_symbol', 'atom_charge', 'atom_degree', 'atom_hybridization', 'num_rings', 'num_Hs']
 EDGE_FEATS = ['bond_type', 'is_conjugated', 'num_rings'] # ['bond_type', 'is_conjugated', 'stereo_type']
 
 # select model
@@ -135,7 +136,7 @@ elif MODEL_NAME == 'AttentiveFP_GNN':
 elif MODEL_NAME == 'GAT_GNN':
     model = GAT_GNN
     model_parameters = {'n_conv': [6],
-                        'n_lin': [0],  # 1, 2, 3, 4]
+                        'n_lin': [1],  # 1, 2, 3, 4]
                         'n_heads': [4],
                         'n_conv_hidden': [256],
                         'n_lin_hidden': [128],  # [32, 64, 128, 256, 512]

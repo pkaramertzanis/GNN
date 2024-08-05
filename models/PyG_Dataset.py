@@ -110,7 +110,6 @@ class PyG_Dataset(InMemoryDataset):
             adjacency_info.append(get_adjacency_info(mol))
             node_features.append(get_node_features(mol, feats=self.node_feats))
             edge_features.append(get_edge_features(mol, feats=self.edge_feats))
-            # assay_results.append(pd.DataFrame(json.loads(mols[i_mol].GetProp('assay_data'))))
 
         # categorical node features and their counts
         tmp = pd.concat(node_features, axis='index', ignore_index=True)

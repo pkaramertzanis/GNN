@@ -50,6 +50,9 @@ def train_eval(net,
                                  and if 'equal task' each task contributes equally
     :param metrics_history: list with metrics history to append to, if None, a new list is created
     :return: list with metrics history dictionaries, one dictionary per logging event
+
+    Note: Early stopping has not been implemented. For an easy implementation in PyTorch see
+          https://medium.com/@vrunda.bhattbhatt/a-step-by-step-guide-to-early-stopping-in-tensorflow-and-pytorch-59c1e3d0e376
     """
     # metrics history, continue from the previous run if not None
     if metrics_history is None:
@@ -221,20 +224,20 @@ def train_eval(net,
 
                         metrics_batch.append(metrics_batch_task)
 
-                # report the metrics for the batch
-                tmp = pd.DataFrame(metrics_batch)
-                loss_mean = (tmp['number of datapoints'] * tmp['loss (mean)']).sum() / tmp['number of datapoints'].sum()
-                tp, tn, fp, fn, number_of_datapoints = tmp['tp'].sum(), tmp['tn'].sum(), tmp['fp'].sum(), tmp['fn'].sum(), \
-                tmp['number of datapoints'].sum()
-                tmp = {'epoch': i_epoch, 'batch': i_batch, 'task': None, 'stage': 'eval', 'type': 'aggregate (batch)', 'number of datapoints': number_of_datapoints}
-                tmp['loss (mean)'] = loss_mean
-                tmp.update(compute_metrics(tp.item(), tn.item(), fp.item(), fn.item()))
-                metrics_batch.append(tmp)
+                    # report the metrics for the batch
+                    tmp = pd.DataFrame(metrics_batch)
+                    loss_mean = (tmp['number of datapoints'] * tmp['loss (mean)']).sum() / tmp['number of datapoints'].sum()
+                    tp, tn, fp, fn, number_of_datapoints = tmp['tp'].sum(), tmp['tn'].sum(), tmp['fp'].sum(), tmp['fn'].sum(), \
+                    tmp['number of datapoints'].sum()
+                    tmp = {'epoch': i_epoch, 'batch': i_batch, 'task': None, 'stage': 'eval', 'type': 'aggregate (batch)', 'number of datapoints': number_of_datapoints}
+                    tmp['loss (mean)'] = loss_mean
+                    tmp.update(compute_metrics(tp.item(), tn.item(), fp.item(), fn.item()))
+                    metrics_batch.append(tmp)
 
-                # log the metrics
-                log.info(pd.DataFrame(metrics_batch))
+                    # log the metrics
+                    log.info(pd.DataFrame(metrics_batch))
 
-                metrics_epoch.extend(metrics_batch)
+                    metrics_epoch.extend(metrics_batch)
 
             # report the metrics for the epoch (for all tasks)
             tmp = pd.DataFrame(metrics_epoch)
