@@ -1,9 +1,9 @@
-import numpy as np
-
 import logger
 log = logger.get_logger(__name__)
 
 import pandas as pd
+import numpy as np
+
 from pathlib import Path
 import math
 from typing import Union
@@ -197,14 +197,12 @@ def train_eval(net,
 
                 # evaluate the model on the eval set
                 for i_batch, batches in enumerate(zip_recycle(*eval_loaders)):
-                    print(i_batch)
                     metrics_batch = []
                     loss = torch.tensor(0.)
                     n_datapoints = 0
                     total_batch_size = sum([len(task_batch) for task_batch in batches])
                     for i_task, task_batch in enumerate(batches):
                         metrics_batch_task = {'epoch': i_epoch, 'batch': i_batch, 'task': i_task, 'stage': 'eval', 'type': 'raw', 'number of datapoints': len(task_batch)}
-                        print(metrics_batch_task)
                         n_datapoints += len(task_batch)
 
                         y = [1 if assay_data == 'positive' else 0 for assay_data in task_batch.assay_data]
