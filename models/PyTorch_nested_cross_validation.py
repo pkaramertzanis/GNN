@@ -20,8 +20,6 @@ def nested_cross_validation(model: torch.nn.Module,
                             splits: pd.DataFrame,
                             configurations: list,
                             fingerprint_parameters: dict,
-                            K_FOLD_OUTER: int,
-                            K_FOLD_INNER: int,
                             PYTORCH_SEED: int,
                             BATCH_SIZE_MAX: int,
                             NUM_EPOCHS: int,
@@ -61,7 +59,6 @@ def nested_cross_validation(model: torch.nn.Module,
 
     # ..initiate the outer loop of the nested cross validation
     for i_outer in range(K_FOLD_OUTER):
-        # for i_outer in [0,1,2]: # DO NOT FORGET TO UNCOMMENT for limited runs !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         log.info(f'Initiating outer iteration {i_outer}')
 
         if len(configurations) == 1:
@@ -179,6 +176,8 @@ def nested_cross_validation(model: torch.nn.Module,
             log.info(
                 f'outer fold {i_outer}, best configuration ID: {best_configuration_ID} with balanced accuracy: {balanced_accuracy_eval_inner_folds.max():.4} (range: {balanced_accuracy_eval_inner_folds.min():.4} - {balanced_accuracy_eval_inner_folds.max():.4})')
 
+
+        # assert 1==0
         # refit using the whole train + eval sets and evaluate in the test set
         msk = (splits['outer fold'] == i_outer) & (splits['inner fold'] == 0)
         train_eval_set_size_max = max(len(idxs_train.tolist() + idxs_eval.tolist()) for idxs_train, idxs_eval in
@@ -187,16 +186,20 @@ def nested_cross_validation(model: torch.nn.Module,
             len(idxs) for idxs in splits.loc[msk, 'test indices'])  # largest test set size among tasks
         train_eval_loaders, test_loaders = [], []
         for task in dsets:
+            print(task, len(dsets[task]['dset']))
             msk = (splits['outer fold'] == i_outer) & (splits['inner fold'] == 0) & (splits['task'] == task)
+
             train_eval_set = [rec for idx, rec in enumerate(dsets[task]['dset']) if
-                              idx in splits.loc[msk, 'train indices'].iloc[0].tolist() +
-                              splits.loc[msk, 'eval indices'].iloc[0].tolist()]
+                              idx in splits.loc[msk, 'train indices'].iloc[0].tolist() + splits.loc[msk, 'eval indices'].iloc[0].tolist()]
+            # assert 1==0
+            print(len(train_eval_set))
             batch_size = math.ceil(BATCH_SIZE_MAX * len(train_eval_set) / float(train_eval_set_size_max))
             train_eval_loader = DataLoader(train_eval_set, batch_size=batch_size, shuffle=True,
                                            drop_last=True)  # .. we drop the last to have stable gradients
             train_eval_loaders.append(train_eval_loader)
             test_set = [rec for idx, rec in enumerate(dsets[task]['dset']) if
                         idx in splits.loc[msk, 'test indices'].iloc[0].tolist()]
+            print(len(test_set))
             batch_size = math.ceil(BATCH_SIZE_MAX * len(test_set) / float(test_set_size_max))
             test_loader = DataLoader(test_set, batch_size=batch_size, shuffle=True, drop_last=False)
             test_loaders.append(test_loader)
@@ -242,7 +245,7 @@ def nested_cross_validation(model: torch.nn.Module,
         outp = metrics_history_path / f'outer_fold_{i_outer}_configuration_ID_{configuration_ID}'
         outp.mkdir(parents=True, exist_ok=True)
         metrics_history = train_eval(net, train_eval_loaders, test_loaders, global_loss_fn, optimizer, scheduler,
-                                     2 * NUM_EPOCHS, outp=None, log_epoch_frequency=LOG_EPOCH_FREQUENCY,
+                                     2 * NUM_EPOCHS, outp=outp / 'model_weights_diff_quantiles.tsv', log_epoch_frequency=LOG_EPOCH_FREQUENCY,
                                      scale_loss_task_size=SCALE_LOSS_TASK_SIZE)
 
         # log the metrics for the training set and evaluation set

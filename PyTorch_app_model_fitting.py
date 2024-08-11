@@ -57,33 +57,20 @@ flat_datasets = [
                 # r'data/Leadscope/tabular/Leadscope_genotoxicity.xlsx',
                 r'data/QSARToolbox/tabular/QSARToolbox_genotoxicity.xlsx'
                 ]
-task_aggregation_cols = ['in vitro/in vivo', 'endpoint', 'assay', 'cell line/species', 'metabolic activation']
-# task_aggregation_cols = ['in vitro/in vivo', 'endpoint', 'assay', 'cell line/species']
-# task_aggregation_cols = ['in vitro/in vivo', 'endpoint', 'assay']
-# record_selection = {'assay': ['bacterial reverse mutation assay']}
-# record_selection = {'cell line/species': ['Escherichia coli (WP2 Uvr A)',
-#                                           'Salmonella typhimurium (TA 100)',
-#                                           'Salmonella typhimurium (TA 102)',
-#                                           'Salmonella typhimurium (TA 104)',
-#                                           'Salmonella typhimurium (TA 1535)',
-#                                           'Salmonella typhimurium (TA 1537)',
-#                                           'Salmonella typhimurium (TA 1538)',
-#                                           'Salmonella typhimurium (TA 97)',
-#                                            'Salmonella typhimurium (TA 98)']}
-record_selection = {'cell line/species': ['Salmonella typhimurium (TA 100)',
-                                          'Salmonella typhimurium (TA 98)',
-                                          'Salmonella typhimurium (TA 1535)']}
-# record_selection = {'cell line/species': ['Salmonella typhimurium (TA 1535)'],
-#                     'metabolic activation': ['no']
-#                      }
-# record_selection = {'cell line/species': ['Salmonella typhimurium (TA 100)']}
-# record_selection = None
+task_specifications = [
+    {'filters': {'assay': ['bacterial reverse mutation assay'], 'cell line/species': ['Salmonella typhimurium (TA 100)', 'Salmonella typhimurium (TA 98)', 'Salmonella typhimurium (TA 1535)'], 'metabolic activation': ['yes', 'no']},
+     'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay', 'cell line/species', 'metabolic activation']},
+
+    {'filters': {'assay': ['in vitro mammalian cell gene mutation test using the Hprt and xprt genes']},
+     'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
+
+    {'filters': {'assay': ['in vitro mammalian chromosome aberration test']},
+     'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
+    ]
 outp_sdf = Path(r'data/combined_dev/sdf/genotoxicity_dataset.sdf')
 outp_tab = Path(r'data/combined_dev/tabular/genotoxicity_dataset.xlsx')
 tasks = create_sdf(flat_datasets = flat_datasets,
-                   filter_unknown = True,
-                   task_aggregation_cols = task_aggregation_cols,
-                   record_selection = record_selection,
+                   task_specifications = task_specifications,
                    outp_sdf = outp_sdf,
                    outp_tab = outp_tab)
 
@@ -102,7 +89,7 @@ SCALE_LOSS_TASK_SIZE = None # how to scale the loss function, can be 'equal task
 SCALE_LOSS_CLASS_SIZE = 'equal class (task)' # how to scale the loss function, can be 'equal class (task)', 'equal class (global)' or None
 
 # location to store the metrics logs
-metrics_history_path = Path(rf'D:\myApplications\local\2024_01_21_GCN_Muta\output\iteration_dev')/MODEL_NAME
+metrics_history_path = Path(rf'D:\myApplications\local\2024_01_21_GCN_Muta\output\iteration75')/MODEL_NAME
 metrics_history_path.mkdir(parents=True, exist_ok=True)
 
 fingerprint_parameters = {'radius': 2,
@@ -110,11 +97,11 @@ fingerprint_parameters = {'radius': 2,
                           'type': 'binary' # 'binary', 'count'
                           }
 
-model_parameters = {'hidden_layers': [[512, 512]],  # [64, 128, 256]
+model_parameters = {'hidden_layers': [[512, 512], [256, 256]],  # [64, 128, 256]
                     'dropout': [0.5],  # [0.5, 0.6, 0.7, 0.8],
                     'activation_function': [torch.nn.functional.leaky_relu],
-                    'learning_rate': [0.005],  # [0.001, 0.005, 0.01]
-                    'weight_decay': [2.e-2],  # [1.e-5, 1e-4, 1e-3]
+                    'learning_rate': [0.002],  # [0.001, 0.005, 0.01]
+                    'weight_decay': [2.e-3],  # [1.e-5, 1e-4, 1e-3]
                     }
 
 
@@ -182,9 +169,9 @@ for task in task_outcomes.columns:
             per_pos_inner_train = 100 * y_inner_train_dist['positive'] / len(y_inner_train)
             log.info(f"task {task}, outer fold {i_outer}, inner fold {i_inner}, train set: {len(y_inner_train):4d} data points, positives: {y_inner_train_dist['positive']:4d} ({per_pos_inner_train:.2f}%)")
             entry = {'task': task, 'outer fold': i_outer, 'inner fold': i_inner,
-                     'train indices': task_molecule_ids.iloc[train_indices],
-                     'eval indices': task_molecule_ids.iloc[evaluate_indices],
-                     'test indices': task_molecule_ids.iloc[test_indices],
+                     'train indices': pd.Series(train_indices), # task_molecule_ids.iloc[train_indices],
+                     'eval indices': pd.Series(evaluate_indices), # task_molecule_ids.iloc[evaluate_indices],
+                     'test indices': pd.Series(test_indices), # task_molecule_ids.iloc[test_indices],
                      'task # data points': len(y_task),
                      'test # data points': len(test_indices),
                      'train # data points': len(train_indices),
@@ -256,7 +243,6 @@ random.shuffle(configurations)
 model = FFNNModel
 
 
-# nested cross validation
 # nested cross-validation
 nested_cross_validation(model,
                         dsets,
@@ -273,6 +259,7 @@ nested_cross_validation(model,
                         metrics_history_path)
 
 
+
 # consolidate the metrics for each outer iteration and list the optimal configuration for each outer iteration
 consolidate_metrics_outer(metrics_history_path/'metrics_history.tsv',
                           metrics_history_path/'metrics_history_outer.xlsx',
@@ -281,7 +268,7 @@ consolidate_metrics_outer(metrics_history_path/'metrics_history.tsv',
 
 
 # plot the average metrics for all outer iterations as a function of epoch (range is shown as a shaded area)
-task_names = [f'task {i_task}' for i_task in range(6)]
+task_names = [f'task {i_task}' for i_task in range(len(tasks))]
 plot_metrics_convergence_outer_average(metrics_history_path/'metrics_history.tsv',
                                        metrics_history_path/'metrics_convergence_outer_average.png',
                                        task_names=task_names)

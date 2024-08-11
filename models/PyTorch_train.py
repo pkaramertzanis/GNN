@@ -136,6 +136,20 @@ def train_eval(net,
             optimizer.step()
             log.info(f'backward pass took {time.time()-start_time:.2} seconds')
 
+        # store the model weight absolute delta percentiles in subsequent epochs to check convergence
+        if outp is not None:
+            weight_values = [w_value for w_name in net.state_dict() for w_value in
+                             net.state_dict()[w_name].cpu().numpy().flatten()]
+            if i_epoch > 0:
+                # with open(outp, 'ta') as f:
+                weight_abs_diff = np.abs(np.array(weight_values) - np.array(weight_values_previous))
+                weight_abs_diff_quantiles = np.quantile(weight_abs_diff, np.arange(0.01, 1, 0.01))
+                with open(outp, 'ta') as f:
+                    f.write('\n' + '\t'.join([f'{diff:0.5}' for diff in weight_abs_diff_quantiles]))
+            else:
+                with open(outp, 'ta') as f:
+                    f.write('\t'.join([f'{quant:0.5}' for quant in np.arange(0.01, 1, 0.01)]))
+            weight_values_previous = weight_values
 
         scheduler.step()
 
@@ -277,23 +291,9 @@ def train_eval(net,
 
                 metrics_epoch.append(tmp)
 
-
-
             metrics_history.extend(metrics_epoch)
 
-            # store the model weight absolute delta percentiles in subsequent epochs to check convergence
-            if outp is not None:
-                weight_values = [w_value for w_name in net.state_dict() for w_value in net.state_dict()[w_name].cpu().numpy().flatten()]
-                if i_epoch > 0:
-                    # with open(outp, 'ta') as f:
-                    weight_abs_diff = np.abs(np.array(weight_values) - np.array(weight_values_previous))
-                    weight_abs_diff_quantiles = np.quantile(weight_abs_diff, np.arange(0.01, 1, 0.01))
-                    with open(outp, 'ta') as f:
-                        f.write('\n' + '\t'.join([f'{diff:0.5}' for diff in weight_abs_diff_quantiles]))
-                else:
-                    with open(outp, 'ta') as f:
-                        f.write('\t'.join([f'{quant:0.5}' for quant in np.arange(0.01, 1, 0.01)]))
-                weight_values_previous = weight_values
+
 
                 #
                 # weight_values_previous = None if i_epoch == 0 else weight_values

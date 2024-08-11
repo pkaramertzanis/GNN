@@ -66,7 +66,8 @@ pd.options.mode.copy_on_write = True
 
 
 
-def process_smiles(smiles: str) -> Union[tuple[str, Chem.Mol, str], None]:
+def process_smiles(smiles: str,
+                   ) -> tuple[Union[str, None], Union[Chem.Mol, None], str]:
     '''
      Utility function to process an input smiles. It checks that the smiles is suitable for modelling and it
      produces a standardised smiles and standardised RDKit mol. The latter can be used for modelling. The function also
@@ -101,7 +102,7 @@ def process_smiles(smiles: str) -> Union[tuple[str, Chem.Mol, str], None]:
     else:
         return None, None, 'Failed to disconnect alkali metals'
 
-    # standardise the structure
+    # standardise the structure (first cleanup)
     STANDARDISER_OPS = ['cleanup']
     rdkit_mol_std, error_warnings = standardise_mol(rdkit_mol_std, STANDARDISER_OPS)
     if rdkit_mol_std is not None:
@@ -120,10 +121,9 @@ def process_smiles(smiles: str) -> Union[tuple[str, Chem.Mol, str], None]:
         return None, None, 'All fragments were removed as toxicologically insignificant'
 
     # remove stereo
-    STEREO_OPS = ['R/S', 'cis/trans']
-    rdkit_mol_std = remove_stereo(rdkit_mol_std, STEREO_OPS)
+    rdkit_mol_std = remove_stereo(rdkit_mol_std, stereo_types=None)
 
-    # standardise the structures
+    # standardise the structures (other operations)
     STANDARDISER_OPS = ['uncharge']  # ['cleanup', 'addHs']
     rdkit_mol_std, error_warnings = standardise_mol(rdkit_mol_std, STANDARDISER_OPS)
     if rdkit_mol_std is not None:
@@ -133,7 +133,7 @@ def process_smiles(smiles: str) -> Union[tuple[str, Chem.Mol, str], None]:
                                                    'Running LargestFragmentChooser',
                                                    'Running Uncharger']] if error_warnings else []
         msgs = ', '.join(sorted(msgs))
-        processing_details['warnings (standardisation, uncharge)'] = msgs if msgs else None
+        processing_details['warnings (standardisation, other operations)'] = msgs if msgs else None
     else:
         return None, None, error_warnings
 
@@ -151,25 +151,20 @@ def process_smiles(smiles: str) -> Union[tuple[str, Chem.Mol, str], None]:
     if check_outcome:
         return Chem.MolToSmiles(rdkit_mol_std), rdkit_mol_std, processing_details
     else:
-        return None, None, 'Structure checker rejectd the structure'
+        return None, None, 'Structure checker rejected the structure'
 
 
 
 
 
-def create_sdf(flat_datasets: list, task_aggregation_cols: list[str],
-               record_selection: Union[dict[str, list[str]], None],
-               filter_unknown: bool,
+def create_sdf(flat_datasets: list,
+               task_specifications: list[dict],
                outp_sdf: Path, outp_tab: Path) -> list[str]:
     '''
     Read in the provided flatten datasets, preprocess the structures and produce an sdf file suitable for creating
      a PyTorch Geometric dataset.
-
     :param flat_datasets: list of paths to the flattened datasets
-    :param task_aggregation_cols: list of columns (as in the flatten datasets) to aggregate the tasks
-    :param record_selection: dictionary with the records to keep, the key is the column and the value is a list of values, if None all records are kept.
-                             Typically, this is used to select one assay or a couple of assays only. All filters apply at the same time.
-    :param filter_unknown: if True, the records for which one or more of the task aggregation columns is "unknown" will be removed
+    :param task_specifications: list of dictionaries to define which records to keep and how to aggregate them into tasks
     :param outp_sdf: path to the output sdf file
     :param outp_tab: path to the output tabular (excel) file
     :return: list of task names
@@ -179,67 +174,136 @@ def create_sdf(flat_datasets: list, task_aggregation_cols: list[str],
         log.info(f'reading in {flat_dataset}')
         dataset.append(pd.read_excel(flat_dataset))
     dataset = pd.concat(dataset, ignore_index=True, axis='index', sort=False)
-    # set the "record ID" and the rename the source "record ID" to "source record ID"
+    # set the "record ID" and rename the source "record ID" to "source record ID"
     dataset = (dataset
                .rename({'record ID': 'source record ID'}, axis='columns')
                .reset_index(drop=True).reset_index().rename({'index': 'record ID'}, axis=1))
 
-    # remove records with unknown task aggregation columns
-    if filter_unknown:
-        msk = dataset[task_aggregation_cols].apply(lambda row: 'unknown' not in row.to_list(), axis='columns')
-        dataset = dataset.loc[msk]
-        log.info(f'from {len(msk)} records {(~msk).sum()} were removed because at least one of the task aggregation columns was unknown')
+    # ----
 
-    # keeps only selected records
-    if record_selection is not None:
+    aggregated_datasets = []
+    for i_task, task_specification in enumerate(task_specifications):
+        filters = task_specification['filters']
+        task_aggregation_cols = task_specification['task aggregation columns']
         msk = []
-        for col, vals in record_selection.items():
-            msk.append(dataset[col].isin(vals))
+        for filter_col, filter_values in filters.items():
+            msk.append(dataset[filter_col].isin(filter_values))
         msk = reduce(lambda x, y: x & y, msk)
-        dataset = dataset.loc[msk]
-        log.info(f'from {len(msk)} records {(~msk).sum()} were removed because of the applied filters on the records')
+        log.info(f'task {i_task}: {msk.sum()} records kept after applying the filters')
 
+        # preprocess the structures, some may be removed by the checker and due to the applied operations
+        smiles_list = dataset.loc[msk, 'smiles'].drop_duplicates().to_list()
+        structures = []
+        for smiles in tqdm(smiles_list):
+            smiles_std, rdkit_mol_std, processing_details = process_smiles(smiles)
+            if smiles_std is not None:
+                structures.append({'smiles': smiles, 'smiles_std': smiles_std, 'rdkit_mol_std': rdkit_mol_std,
+                                   'processing details': processing_details})
+        log.info(f'{len(structures)} out of {len(smiles_list)} structures remain after preprocessing')
 
-    # preprocess the structures, some may be removed by the checker and due to the applied operations
-    smiles_list = dataset['smiles'].drop_duplicates().to_list()
-    structures = []
-    for smiles in tqdm(smiles_list):
-        smiles_std, rdkit_mol_std, processing_details = process_smiles(smiles)
-        if smiles_std is not None:
-            structures.append({'smiles': smiles, 'smiles_std': smiles_std, 'rdkit_mol_std': rdkit_mol_std,
-                               'processing details': processing_details})
-    log.info(f'{len(structures)} out of {len(smiles_list)} structures remain after preprocessing')
+        # merge structures into the dataset
+        structures = pd.DataFrame(structures)
+        aggregated_dataset = dataset.loc[msk].merge(structures, on='smiles', how='inner')
 
-    # merge structures into the dataset
-    structures = pd.DataFrame(structures)
-    dataset = dataset.merge(structures, on='smiles', how='inner')
+        # aggregate
+        aggregated_dataset = (aggregated_dataset.groupby(['smiles_std'] + task_aggregation_cols)[['genotoxicity', 'CAS number', 'source record ID', 'smiles']]
+               .agg({'genotoxicity': lambda vals: x[0] if len(x:=vals.dropna().drop_duplicates().to_list())==1 else 'ambiguous' if len(x)>1 else 'not available',
+                   'CAS number': lambda rns: ', '.join(sorted(rns.dropna().drop_duplicates().to_list())),
+                   'source record ID': lambda srids: ', '.join(sorted(srids.dropna().drop_duplicates().to_list())),
+                  'smiles':  lambda smis: ', '.join(sorted(smis.dropna().drop_duplicates().to_list()))
+                  })
+               .reset_index()
+               )
+        aggregated_dataset['task aggregation'] = aggregated_dataset[task_aggregation_cols].apply(lambda row: ', '.join(row.index), axis='columns')
+        aggregated_dataset['task'] = aggregated_dataset[task_aggregation_cols].apply(lambda row: ', '.join(row.to_list()), axis='columns')
+        aggregated_dataset = aggregated_dataset.drop(task_aggregation_cols, axis='columns')
 
-    agg_cols = task_aggregation_cols # this can be modified to create different tasks
-    res = (dataset.groupby(['smiles_std'] + agg_cols)[['genotoxicity', 'CAS number', 'source record ID']]
-           .agg({'genotoxicity': lambda vals: x[0] if len(x:=vals.dropna().drop_duplicates().to_list())==1 else 'ambiguous' if len(x)>1 else 'not available',
-                 'CAS number': lambda rns: ', '.join(sorted(rns.dropna().drop_duplicates().to_list())),
-                 'source record ID': lambda srids: ', '.join(sorted(srids.dropna().drop_duplicates().to_list()))
-                 })
-           .reset_index()
-           )
-    res['task aggregation'] = res[agg_cols].apply(lambda row: ', '.join(row.index), axis='columns')
-    res['task'] = res[agg_cols].apply(lambda row: ', '.join(row.to_list()), axis='columns')
-    res = res.drop(agg_cols, axis='columns')
+        aggregated_datasets.append(aggregated_dataset)
+
+    aggregated_datasets = pd.concat(aggregated_datasets, axis='index', ignore_index=True, sort=False)
 
     # list of tasks
-    tasks = res['task'].drop_duplicates().to_list()
+    tasks = aggregated_datasets['task'].drop_duplicates().to_list()
 
     # create the tabular file
     log.info(f'writing genotoxicity dataset to {outp_tab}')
-    res.to_excel(outp_tab, index=False)
+    aggregated_datasets.to_excel(outp_tab, index=False)
 
     # create the sdf file
     log.info(f'writing genotoxicity dataset to {outp_sdf}')
-    res = res.groupby('smiles_std')[['smiles_std', 'task aggregation', 'task', 'CAS number', 'source record ID', 'genotoxicity']].apply(lambda x: x.to_json(orient='records')).rename('genotoxicity').reset_index()
+    aggregated_datasets = aggregated_datasets.groupby('smiles_std')[['smiles_std', 'task aggregation', 'task', 'CAS number', 'source record ID', 'genotoxicity']].apply(lambda x: x.to_json(orient='records')).rename('genotoxicity').reset_index()
     with Chem.SDWriter(outp_sdf) as sdf_writer:
-        for idx, row in tqdm(res.iterrows()):
+        for idx, row in tqdm(aggregated_datasets.iterrows()):
             mol = Chem.MolFromSmiles(row['smiles_std'])
             mol.SetProp('genotoxicity', row['genotoxicity'])
             sdf_writer.write(mol)
 
     return tasks
+
+
+    # ----
+
+    #
+    #
+    # # remove records with unknown task aggregation columns
+    # if filter_unknown:
+    #     msk = dataset[task_aggregation_cols].apply(lambda row: 'unknown' not in row.to_list(), axis='columns')
+    #     dataset = dataset.loc[msk]
+    #     log.info(f'from {len(msk)} records {(~msk).sum()} were removed because at least one of the task aggregation columns was unknown')
+    #
+    # # keeps only selected records
+    # if record_selection is not None:
+    #     msk = []
+    #     for col, vals in record_selection.items():
+    #         msk.append(dataset[col].isin(vals))
+    #     msk = reduce(lambda x, y: x & y, msk)
+    #     dataset = dataset.loc[msk]
+    #     log.info(f'from {len(msk)} records {(~msk).sum()} were removed because of the applied filters on the records')
+    #
+    #
+    # # preprocess the structures, some may be removed by the checker and due to the applied operations
+    # smiles_list = dataset['smiles'].drop_duplicates().to_list()
+    # structures = []
+    # for smiles in tqdm(smiles_list):
+    #     smiles_std, rdkit_mol_std, processing_details = process_smiles(smiles)
+    #     if smiles_std is not None:
+    #         if '/' in smiles_std:
+    #             assert 1 == 0
+    #         structures.append({'smiles': smiles, 'smiles_std': smiles_std, 'rdkit_mol_std': rdkit_mol_std,
+    #                            'processing details': processing_details})
+    # log.info(f'{len(structures)} out of {len(smiles_list)} structures remain after preprocessing')
+    #
+    # # merge structures into the dataset
+    # structures = pd.DataFrame(structures)
+    # dataset = dataset.merge(structures, on='smiles', how='inner')
+    #
+    # agg_cols = task_aggregation_cols # this can be modified to create different tasks
+    # res = (dataset.groupby(['smiles_std'] + agg_cols)[['genotoxicity', 'CAS number', 'source record ID', 'smiles']]
+    #        .agg({'genotoxicity': lambda vals: x[0] if len(x:=vals.dropna().drop_duplicates().to_list())==1 else 'ambiguous' if len(x)>1 else 'not available',
+    #              'CAS number': lambda rns: ', '.join(sorted(rns.dropna().drop_duplicates().to_list())),
+    #              'source record ID': lambda srids: ', '.join(sorted(srids.dropna().drop_duplicates().to_list())),
+    #              'smiles':  lambda smis: ', '.join(sorted(smis.dropna().drop_duplicates().to_list()))
+    #              })
+    #        .reset_index()
+    #        )
+    # res['task aggregation'] = res[agg_cols].apply(lambda row: ', '.join(row.index), axis='columns')
+    # res['task'] = res[agg_cols].apply(lambda row: ', '.join(row.to_list()), axis='columns')
+    # res = res.drop(agg_cols, axis='columns')
+    #
+    # # list of tasks
+    # tasks = res['task'].drop_duplicates().to_list()
+    #
+    # # create the tabular file
+    # log.info(f'writing genotoxicity dataset to {outp_tab}')
+    # res.to_excel(outp_tab, index=False)
+    #
+    # # create the sdf file
+    # log.info(f'writing genotoxicity dataset to {outp_sdf}')
+    # res = res.groupby('smiles_std')[['smiles_std', 'task aggregation', 'task', 'CAS number', 'source record ID', 'genotoxicity']].apply(lambda x: x.to_json(orient='records')).rename('genotoxicity').reset_index()
+    # with Chem.SDWriter(outp_sdf) as sdf_writer:
+    #     for idx, row in tqdm(res.iterrows()):
+    #         mol = Chem.MolFromSmiles(row['smiles_std'])
+    #         mol.SetProp('genotoxicity', row['genotoxicity'])
+    #         sdf_writer.write(mol)
+    #
+    # return tasks

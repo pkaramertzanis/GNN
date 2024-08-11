@@ -14,6 +14,8 @@ from typing import Union
 from rdkit import Chem
 from rdkit.Chem.MolStandardize import rdMolStandardize
 from rdkit.Chem import Descriptors
+from rdkit.Chem import rdDepictor
+from rdkit.Chem import AllChem
 
 import logging
 from io import StringIO
@@ -42,7 +44,8 @@ class Rdkit_operation:
 
 def read_sdf(fpath: Union[str, Path]) -> list[Chem.Mol]:
     """
-    Reads an sdf file and returns a list of molecule objects
+    Reads an sdf file and returns a list of molecule objects. It does not do sanitisation or removal of Hs. This should
+    be done explicitly if needed.
     :param fpath: string with file path or path object pointing to the sdf file
     :return:
     """
@@ -211,39 +214,76 @@ def get_edge_features(mol: Chem.Mol, feats=None) -> pd.DataFrame:
     return all_edge_feats
 
 
-def remove_stereo(mol: Chem.Mol, stereo_types=None) -> Chem.Mol:
+def remove_stereo(mol: Chem.Mol, stereo_types=None, set_coord_zero=False) -> Chem.Mol:
     '''
     Utility function to remove stereochemistry from a molecule, including cis/trans and R/S stereochemistry.
     :param mol: input molecule
-    :param stereo_types: list of stereochemistry types to remove, for now it supports 'cis/trans' and 'R/S'
+    :param stereo_types: list of stereochemistry types to remove, for now it supports 'cis/trans' and 'R/S'; if not specified
+    :param set_coord_zero: if True, the atomic coordinates are set to zero
+    all stereoisomerism is removed (this includes ring stereochemistry)
     :return: molecule with
     '''
 
+    if stereo_types is not None:
+        for stereo_type in stereo_types:
+            if stereo_type not in ['cis/trans', 'R/S']:
+                ex = ValueError(f'stereochemistry type {stereo_type} not recognised')
+                log.error(ex)
+                raise ex
+        # remove cis/trans stereochemistry
+        if 'cis/trans' in stereo_types:
+            for bond in mol.GetBonds():
+                if bond.GetStereo() in [Chem.BondStereo.STEREOE, Chem.BondStereo.STEREOZ]:
+                    bond.SetStereo(Chem.BondStereo.STEREONONE)
+        # remove R/S stereochemistry
+        if 'R/S' in stereo_types:
+            for atom in mol.GetAtoms():
+                if atom.GetChiralTag() in [Chem.ChiralType.CHI_TETRAHEDRAL, Chem.ChiralType.CHI_TETRAHEDRAL_CCW, Chem.ChiralType.CHI_TETRAHEDRAL_CW]:
+                    atom.SetChiralTag(Chem.ChiralType.CHI_UNSPECIFIED)
+    else:
+        Chem.RemoveStereochemistry(mol)
 
-    # check the stereo_types requested are valid
-    all_stereo_type = ['cis/trans', 'R/S']
-
-    if stereo_types is None:
-        stereo_types = all_stereo_type
-
-    for stereo_type in stereo_types:
-        if stereo_type not in all_stereo_type:
-            ex = ValueError(f'stereochemistry type {stereo_type} not recognised')
-            log.error(ex)
-            raise ex
-    # remove cis/trans stereochemistry
-    if 'cis/trans' in stereo_types:
-        for bond in mol.GetBonds():
-            if bond.GetStereo() in [Chem.BondStereo.STEREOE, Chem.BondStereo.STEREOZ]:
-                bond.SetStereo(Chem.BondStereo.STEREONONE)
-    # remove R/S stereochemistry
-    if 'R/S' in stereo_types:
-        for atom in mol.GetAtoms():
-            if atom.GetChiralTag() in [Chem.ChiralType.CHI_TETRAHEDRAL, Chem.ChiralType.CHI_TETRAHEDRAL_CCW, Chem.ChiralType.CHI_TETRAHEDRAL_CW]:
-                atom.SetChiralTag(Chem.ChiralType.CHI_UNSPECIFIED)
     # regenerate computed properties like implicit valence and ring information in case it matters
+    # Chem.SanitizeMol(mol)
     mol.UpdatePropertyCache(strict=False)
+
+    # set the coordinates to zero so that we do not leave evidence of stereoisomerism in the structure
+    if set_coord_zero:
+        mol = Chem.AddHs(mol)
+        # .. compute the atomic coordinates
+        #  enforce chirality, do not use basic knowledge, torsion preferences and use random cooridnates eliminates failures and we do not need the stereochemistry as we will set the coordinates to zero
+        AllChem.EmbedMolecule(mol, enforceChirality=False, useRandomCoords=True, useExpTorsionAnglePrefs=False, useBasicKnowledge=False)
+        conf = mol.GetConformer()
+        for i in range(mol.GetNumAtoms()):
+            conf.SetAtomPosition(i, (0.0, 0.0, 0.0))
+        mol = Chem.RemoveHs(mol)
+
     return mol
+#
+# mol = Chem.MolFromSmiles(r'C/C=C\Br')
+# print(Chem.MolToMolBlock(mol))
+# print(Chem.MolToSmiles(mol))
+# mol = remove_stereo(mol)
+# print(Chem.MolToMolBlock(mol))
+# print(Chem.MolToSmiles(mol))
+#
+# # read sdf
+# mols = read_sdf('junk/test.sdf')
+#
+# print(Chem.MolToMolBlock(mols[0]))
+# print(Chem.MolToSmiles(mols[0]))
+# mol2 = Chem.MolFromMolBlock(Chem.MolToMolBlock(mol))
+# print(Chem.MolToSmiles(mol2))
+
+# remove_stereo(Chem.MolFromSmiles(Chem.MolToSmiles(rdkit_mol_std)))
+#
+#
+# for bond in rdkit_mol_std.GetBonds():
+#     print(bond.GetStereo())
+#     if bond.GetStereo() in [Chem.BondStereo.STEREOE, Chem.BondStereo.STEREOZ]:
+#         bond.SetStereo(Chem.BondStereo.STEREONONE)
+#         print(bond.GetStereo())
+
 
 def derive_canonical_tautomer(mol: Chem.Mol) -> Chem.Mol:
     '''
@@ -315,7 +355,6 @@ def standardise_mol(mol: Chem.Mol, ops: list[str]=None)  -> tuple[Chem.Mol, str]
                     mol_std, _, _ = derive_canonical_tautomer(mol_std)
                 elif op == 'remove_stereo':
                     mol_std = remove_stereo(mol_std)
-                    print('removed stereo')
         except Exception as ex:
              log.error(ex)
         error_warning = val if (val:=sio.getvalue()) else None
@@ -399,7 +438,6 @@ def check_mol(mol: Chem.Mol, ops: dict=None)  -> bool:
         if 'allowed_bonds' in ops:
             for bond in mol.GetBonds():
                 if bond.GetBondType().name not in ops['allowed_bonds']:
-                    print(bond.GetBondType().name)
                     log.info(f'bond {bond.GetBondType().name} not in the allowed bonds {ops["allowed_bonds"]}')
                     return False
 
@@ -501,7 +539,6 @@ def remove_fragments(mol: Chem.Mol, frags_to_remove: list[str]=None) -> tuple[Ch
             matches = frag.GetSubstructMatches(frag_to_remove)
             full_match = any(len(match) == frag.GetNumAtoms() for match in matches)
             if full_match:
-                print(Chem.MolToSmarts(frag_to_remove))
                 frags_removed.append(frag)
                 removed = True
                 break

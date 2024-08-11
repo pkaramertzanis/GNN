@@ -192,7 +192,7 @@ endpoint = 'in vitro chromosome aberration study in mammalian cells'
 msk_keep = (datasets['Test type'] == 'in Vitro Mammalian Chromosome Aberration Test')
 # .. combine the species "Human" with the strain "Lymphocytes"
 datasets.loc[msk_keep, 'Strain'] = np.where((datasets.loc[msk_keep, 'Test organisms (species)']=='Human') & (datasets.loc[msk_keep, 'Strain']=='Lymphocytes'), 'Human lymphocytes', datasets.loc[msk_keep, 'Strain'])
-main_species_cell_line = datasets['Strain'].isin(['Chinese Hamster Lung (CHL)', 'Chinese Hamster Ovary (CHO)', 'Chinese Hamster Lung Fibroblasts (V79)', 'Human lymphocytes'])
+main_species_cell_line = ['Chinese Hamster Lung (CHL)', 'Chinese Hamster Ovary (CHO)', 'Chinese Hamster Lung Fibroblasts (V79)', 'Human lymphocytes']
 log.info('processing in vitro mammalian chromosome aberration test, in vitro chromosome aberration study in mammalian cells')
 log.info(f'{msk_keep.sum()} records processed, {(~msk_keep).sum()} records left')
 log.info(datasets.loc[msk_keep, ['Test organisms (species)', 'Strain', 'Metabolic activation', 'genotoxicity']].value_counts())
@@ -209,7 +209,7 @@ for idx, datapoint in datasets.loc[msk_keep].iterrows():
              'in vitro/in vivo': 'in vitro',
              'endpoint': endpoint,
              'assay': assay,
-             'cell line/species': 'Escherichia coli'+' ('+(datapoint['Strain'] if datapoint['Strain'] in main_strains else 'unknown')+')',
+             'cell line/species': datapoint['Strain'] if datapoint['Strain'] in main_species_cell_line else 'unknown',
              'metabolic activation': 'yes' if datapoint['Metabolic activation']=='With S9' else 'no' if datapoint['Metabolic activation']=='Without S9' else 'unknown',
              'genotoxicity mode of action': moa_map.get(datapoint['Strain'], 'unknown'),
              'gene': gene_map.get(datapoint['Strain'], 'unknown'),
@@ -226,7 +226,7 @@ datasets = datasets.loc[~msk_keep]
 assay = 'in vitro mammalian cell gene mutation test using the Hprt and xprt genes'
 endpoint = 'in vitro gene mutation study in mammalian cells'
 msk_keep = (datasets['Test type'] == 'Mammalian Cell Gene Mutation Assay')
-main_species_cell_line = datasets['Strain'].isin(['Chinese Hamster Lung (CHL)', 'Chinese Hamster Ovary (CHO)', 'Chinese Hamster Lung Fibroblasts (V79)', 'L5178Y Cells'])
+main_species_cell_line = ['Chinese Hamster Lung (CHL)', 'Chinese Hamster Ovary (CHO)', 'Chinese Hamster Lung Fibroblasts (V79)', 'L5178Y Cells']
 log.info('processing in vitro mammalian cell gene mutation test using the Hprt and xprt genes, in vitro gene mutation study in mammalian cells')
 log.info(f'{msk_keep.sum()} records processed, {(~msk_keep).sum()} records left')
 log.info(datasets.loc[msk_keep, ['Test organisms (species)', 'Strain', 'Metabolic activation', 'genotoxicity']].value_counts())
@@ -243,7 +243,7 @@ for idx, datapoint in datasets.loc[msk_keep].iterrows():
              'in vitro/in vivo': 'in vitro',
              'endpoint': endpoint,
              'assay': assay,
-             'cell line/species': 'Escherichia coli'+' ('+(datapoint['Strain'] if datapoint['Strain'] in main_strains else 'unknown')+')',
+             'cell line/species': datapoint['Strain'] if datapoint['Strain'] in main_species_cell_line else 'unknown',
              'metabolic activation': 'yes' if datapoint['Metabolic activation']=='With S9' else 'no' if datapoint['Metabolic activation']=='Without S9' else 'unknown',
              'genotoxicity mode of action': moa_map.get(datapoint['Strain'], 'unknown'),
              'gene': gene_map.get(datapoint['Strain'], 'unknown'),

@@ -48,6 +48,8 @@ from models.metrics import (plot_metrics_convergence, consolidate_metrics_outer,
 from models.PyG_train import train_eval
 from models.PyG_nested_cross_validation import nested_cross_validation
 
+from visualisations.task_concordance import visualise_task_concordance
+
 # set the device
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -57,38 +59,24 @@ flat_datasets = [
                 # r'data/Leadscope/tabular/Leadscope_genotoxicity.xlsx',
                 r'data/QSARToolbox/tabular/QSARToolbox_genotoxicity.xlsx'
                 ]
-task_aggregation_cols = ['in vitro/in vivo', 'endpoint', 'assay', 'cell line/species', 'metabolic activation']
-# task_aggregation_cols = ['in vitro/in vivo', 'endpoint', 'assay', 'cell line/species']
-# task_aggregation_cols = ['in vitro/in vivo', 'endpoint', 'assay']
-# record_selection = {'assay': ['bacterial reverse mutation assay']}
-#  record_selection = {'cell line/species': ['Escherichia coli (WP2 Uvr A)',
-#                                            'Salmonella typhimurium (TA 100)',
-#                                            'Salmonella typhimurium (TA 102)',
-#                                            'Salmonella typhimurium (TA 104)',
-#                                            'Salmonella typhimurium (TA 1535)',
-#                                            'Salmonella typhimurium (TA 1537)',
-#                                            'Salmonella typhimurium (TA 1538)',
-#                                            'Salmonella typhimurium (TA 97)',
-#                                             'Salmonella typhimurium (TA 98)']}
-# record_selection = {'cell line/species': ['Salmonella typhimurium (TA 100)',
-#                                           'Salmonella typhimurium (TA 98)',
-#                                           'Salmonella typhimurium (TA 1535)'
-#                                           ]}
-record_selection = {'cell line/species': ['Salmonella typhimurium (TA 100)'],
-                    'metabolic activation': ['no']
-                   }
+task_specifications = [
+    {'filters': {'assay': ['bacterial reverse mutation assay'], 'cell line/species': ['Salmonella typhimurium (TA 100)', 'Salmonella typhimurium (TA 98)', 'Salmonella typhimurium (TA 1535)'], 'metabolic activation': ['yes', 'no']},
+     'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay', 'cell line/species', 'metabolic activation']},
+
+    {'filters': {'assay': ['in vitro mammalian cell gene mutation test using the Hprt and xprt genes']},
+     'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
+
+    {'filters': {'assay': ['in vitro mammalian chromosome aberration test']},
+     'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
+    ]
 # record_selection = {'cell line/species': ['Salmonella typhimurium (TA 100)']}
 # record_selection = None
 outp_sdf = Path(r'data/combined/sdf/genotoxicity_dataset.sdf')
 outp_tab = Path(r'data/combined/tabular/genotoxicity_dataset.xlsx')
 tasks = create_sdf(flat_datasets = flat_datasets,
-                   filter_unknown = True,
-                   task_aggregation_cols = task_aggregation_cols,
-                   record_selection = record_selection,
+                   task_specifications = task_specifications,
                    outp_sdf = outp_sdf,
                    outp_tab = outp_tab)
-
-
 # set general parameters
 PYTORCH_SEED = 1 # seed for PyTorch random number generator, it is also used for splits and shuffling to ensure reproducibility
 MINIMUM_TASK_DATASET = 512 # minimum number of data points for a task
@@ -96,7 +84,7 @@ BATCH_SIZE_MAX = 512 # maximum batch size (largest task, the smaller tasks are s
 K_FOLD_INNER = 5 # number of folds for the inner cross-validation
 K_FOLD_OUTER = 10 # number of folds for the outer cross-validation
 NUM_EPOCHS = 80 # number of epochs
-MODEL_NAME = 'GAT_GNN' # name of the model, can be 'MPNN_GNN', 'AttentiveFP_GNN' or 'GAT_GNN'
+MODEL_NAME = 'AttentiveFP_GNN' # name of the model, can be 'MPNN_GNN', 'AttentiveFP_GNN' or 'GAT_GNN'
 SCALE_LOSS_TASK_SIZE = None # how to scale the loss function, can be 'equal task' or None
 SCALE_LOSS_CLASS_SIZE = 'equal class (task)' # how to scale the loss function, can be 'equal class (task)', 'equal class (global)' or None
 
@@ -106,8 +94,14 @@ LOG_EPOCH_FREQUENCY = 10 # frequency to log the metrics during training
 
 
 # location to store the metrics logs
-metrics_history_path = Path(rf'D:\myApplications\local\2024_01_21_GCN_Muta\output\iteration63')/MODEL_NAME
+metrics_history_path = Path(rf'D:\myApplications\local\2024_01_21_GCN_Muta\output\iteration76')/MODEL_NAME
 metrics_history_path.mkdir(parents=True, exist_ok=True)
+
+
+# visualise the task concordance (if more than one task)
+if len(tasks) > 1:
+    visualise_task_concordance(outp_sdf, metrics_history_path/'task_concordance.png')
+
 
 # features, checkers and standardisers
 NODE_FEATS = ['atom_symbol', 'atom_charge', 'atom_degree', 'atom_hybridization', 'num_rings', 'num_Hs']
@@ -130,10 +124,10 @@ elif MODEL_NAME == 'AttentiveFP_GNN':
     model = AttentiveFP_GNN
     model_parameters = {'hidden_channels': [256], # [64, 128, 256]
                         'num_layers': [2], # [1, 2, 3, 4]
-                        'num_timesteps': [2], # [1, 2, 3, 4]
+                        'num_timesteps': [2, 3], # [1, 2, 3, 4]
                         'dropout': [0.0], # [0.5, 0.6, 0.7, 0.8]
                         'learning_rate': [0.005], # [0.001, 0.005, 0.01]
-                        'weight_decay': [5.e-4],  # [1.e-5, 1e-4, 1.e-3]
+                        'weight_decay': [2.e-4],  # [1.e-5, 1e-4, 1.e-3]
                         }
 elif MODEL_NAME == 'GAT_GNN':
     model = GAT_GNN
@@ -257,7 +251,7 @@ consolidate_metrics_outer(metrics_history_path/'metrics_history.tsv',
 
 
 # plot the average metrics for all outer iterations as a function of epoch (range is shown as a shaded area)
-task_names = [f'task {i_task}' for i_task in range(6)]
+task_names = [f'task {i_task}' for i_task in range(len(tasks))]
 plot_metrics_convergence_outer_average(metrics_history_path/'metrics_history.tsv',
                                        metrics_history_path/'metrics_convergence_outer_average.png',
                                        task_names=task_names)

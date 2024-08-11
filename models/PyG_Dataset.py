@@ -7,7 +7,7 @@ from tqdm import tqdm
 import json
 
 from cheminformatics.rdkit_toolkit import get_node_features, get_edge_features, get_adjacency_info
-from cheminformatics.rdkit_toolkit import read_sdf, check_mol, standardise_mol
+from cheminformatics.rdkit_toolkit import read_sdf
 
 import torch
 from torch_geometric.data import InMemoryDataset

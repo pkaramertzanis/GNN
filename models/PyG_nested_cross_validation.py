@@ -256,7 +256,7 @@ def nested_cross_validation(model: torch.nn.Module,
         outp = metrics_history_path / f'outer_fold_{i_outer}_configuration_ID_{configuration_ID}'
         outp.mkdir(parents=True, exist_ok=True)
         metrics_history, model_summary = train_eval(net, train_eval_loaders, test_loaders, global_loss_fn, optimizer,
-                                                    scheduler, 2 * NUM_EPOCHS, outp=None,
+                                                    scheduler, 2 * NUM_EPOCHS, outp=outp / 'model_weights_diff_quantiles.tsv',
                                                     log_epoch_frequency=LOG_EPOCH_FREQUENCY,
                                                     scale_loss_task_size=SCALE_LOSS_TASK_SIZE)
 
