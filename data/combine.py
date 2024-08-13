@@ -44,7 +44,7 @@ import json
 from functools import reduce
 
 from cheminformatics.rdkit_toolkit import (convert_smiles_to_mol, standardise_mol, remove_stereo,
-                                           normalise_mol, remove_fragments, check_mol)
+                                           normalise_mol, remove_fragments, check_mol, apply_tautomerisation_transformations)
 
 from rdkit import Chem
 
@@ -120,6 +120,10 @@ def process_smiles(smiles: str,
     if rdkit_mol_std is None:
         return None, None, 'All fragments were removed as toxicologically insignificant'
 
+    # tautomerise, if it fails the original structure is returned
+    rdkit_mol_std, msgs, error_warnings = apply_tautomerisation_transformations(rdkit_mol_std)
+    processing_details['tautomerisation'] = msgs if msgs else None
+
     # remove stereo
     rdkit_mol_std = remove_stereo(rdkit_mol_std, stereo_types=None)
 
@@ -145,7 +149,8 @@ def process_smiles(smiles: str,
                  'allowed_bonds': ['SINGLE', 'DOUBLE', 'TRIPLE', 'AROMATIC'],
                  'molecular_weight': {'min': 0, 'max': 1000},
                  'max_number_rings': 5,
-                 'allowed_hybridisations': ['UNSPECIFIED', 'SP2', 'SP3', 'SP']
+                 'allowed_hybridisations': ['UNSPECIFIED', 'SP2', 'SP3', 'SP'],
+                 'allowed_total_charge': [0],
                  }
     check_outcome = check_mol(rdkit_mol_std, ops=CHECK_OPS)
     if check_outcome:

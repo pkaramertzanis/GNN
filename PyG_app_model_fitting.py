@@ -94,7 +94,7 @@ LOG_EPOCH_FREQUENCY = 10 # frequency to log the metrics during training
 
 
 # location to store the metrics logs
-metrics_history_path = Path(rf'D:\myApplications\local\2024_01_21_GCN_Muta\output\iteration76')/MODEL_NAME
+metrics_history_path = Path(rf'D:\myApplications\local\2024_01_21_GCN_Muta\output\iteration77')/MODEL_NAME
 metrics_history_path.mkdir(parents=True, exist_ok=True)
 
 
@@ -124,10 +124,10 @@ elif MODEL_NAME == 'AttentiveFP_GNN':
     model = AttentiveFP_GNN
     model_parameters = {'hidden_channels': [256], # [64, 128, 256]
                         'num_layers': [2], # [1, 2, 3, 4]
-                        'num_timesteps': [2, 3], # [1, 2, 3, 4]
+                        'num_timesteps': [2], # [1, 2, 3, 4]
                         'dropout': [0.0], # [0.5, 0.6, 0.7, 0.8]
                         'learning_rate': [0.005], # [0.001, 0.005, 0.01]
-                        'weight_decay': [2.e-4],  # [1.e-5, 1e-4, 1.e-3]
+                        'weight_decay': [5.e-4],  # [1.e-5, 1e-4, 1.e-3]
                         }
 elif MODEL_NAME == 'GAT_GNN':
     model = GAT_GNN
@@ -226,6 +226,8 @@ log.info(f'number of configurations: {len(configurations)}')
 # .. shuffle to sample the configurations randomly
 random.seed(PYTORCH_SEED)
 random.shuffle(configurations)
+# .. output the configurations
+pd.DataFrame(configurations).to_excel(metrics_history_path/'configurations.xlsx', index=False)
 
 
 # nested cross-validation

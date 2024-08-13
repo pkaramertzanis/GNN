@@ -89,7 +89,7 @@ SCALE_LOSS_TASK_SIZE = None # how to scale the loss function, can be 'equal task
 SCALE_LOSS_CLASS_SIZE = 'equal class (task)' # how to scale the loss function, can be 'equal class (task)', 'equal class (global)' or None
 
 # location to store the metrics logs
-metrics_history_path = Path(rf'D:\myApplications\local\2024_01_21_GCN_Muta\output\iteration75')/MODEL_NAME
+metrics_history_path = Path(rf'D:\myApplications\local\2024_01_21_GCN_Muta\output\iteration_dev')/MODEL_NAME
 metrics_history_path.mkdir(parents=True, exist_ok=True)
 
 fingerprint_parameters = {'radius': 2,
@@ -111,7 +111,7 @@ from cheminformatics.rdkit_toolkit import read_sdf
 from rdkit.Chem import AllChem
 from tqdm import tqdm
 fpgen = AllChem.GetMorganGenerator(radius=fingerprint_parameters['radius'], fpSize=fingerprint_parameters['fpSize'],
-                                   countSimulation=False)
+                                   countSimulation=False, includeChirality=False)
 mols = read_sdf(outp_sdf)
 data = []
 for i_mol, mol in tqdm(enumerate(mols)):
@@ -238,6 +238,8 @@ log.info(f'number of configurations: {len(configurations)}')
 # .. shuffle to sample the configurations randomly
 random.seed(PYTORCH_SEED)
 random.shuffle(configurations)
+# .. output the configurations
+pd.DataFrame(configurations).to_excel(metrics_history_path/'configurations.xlsx', index=False)
 
 # set the model
 model = FFNNModel

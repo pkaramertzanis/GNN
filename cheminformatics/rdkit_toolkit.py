@@ -259,30 +259,7 @@ def remove_stereo(mol: Chem.Mol, stereo_types=None, set_coord_zero=False) -> Che
         mol = Chem.RemoveHs(mol)
 
     return mol
-#
-# mol = Chem.MolFromSmiles(r'C/C=C\Br')
-# print(Chem.MolToMolBlock(mol))
-# print(Chem.MolToSmiles(mol))
-# mol = remove_stereo(mol)
-# print(Chem.MolToMolBlock(mol))
-# print(Chem.MolToSmiles(mol))
-#
-# # read sdf
-# mols = read_sdf('junk/test.sdf')
-#
-# print(Chem.MolToMolBlock(mols[0]))
-# print(Chem.MolToSmiles(mols[0]))
-# mol2 = Chem.MolFromMolBlock(Chem.MolToMolBlock(mol))
-# print(Chem.MolToSmiles(mol2))
 
-# remove_stereo(Chem.MolFromSmiles(Chem.MolToSmiles(rdkit_mol_std)))
-#
-#
-# for bond in rdkit_mol_std.GetBonds():
-#     print(bond.GetStereo())
-#     if bond.GetStereo() in [Chem.BondStereo.STEREOE, Chem.BondStereo.STEREOZ]:
-#         bond.SetStereo(Chem.BondStereo.STEREONONE)
-#         print(bond.GetStereo())
 
 
 def derive_canonical_tautomer(mol: Chem.Mol) -> Chem.Mol:
@@ -313,6 +290,94 @@ def derive_canonical_tautomer(mol: Chem.Mol) -> Chem.Mol:
     return (mol_can_taut, warning, error)
 
 
+def apply_reaction(smirks: str, mol: Chem.Mol, maxIterations=5) -> tuple[Chem.Mol, Union[str, None]]:
+    '''
+    Applies a reaction SMIRKS to a molecule and returns the product. It is important to have the aromatised molecular
+    structure otherwise we may destroy aromatic rings
+    :param smirks: the reaction SMIRKS
+    :param mol: the molecule
+    :param maxIterations: maximum number of reaction steps (do not use recursion for stability)
+    :return: the reaction product and a message explaining how many times the reaction was applied (can be None)
+    '''
+    rxn = AllChem.ReactionFromSmarts(smirks)
+    # add explicit hydrogen atoms as there are needed by the reaction SMIRKS
+    reactant = mol
+    for atom in reactant.GetAtoms():
+        implicit_valence = atom.GetImplicitValence()
+    reactant = Chem.AddHs(reactant)
+    Chem.SanitizeMol(reactant)
+
+    for i_reaction in range(maxIterations):
+        products = rxn.RunReactants((reactant,), maxProducts=1)
+        if len(products) == 0:
+            product = reactant
+            break
+        else:
+            reactant = products[0][0]
+            Chem.SanitizeMol(reactant) # sanitisation may be needed, see https://www.rdkit.org/docs/GettingStartedInPython.html#chemical-reactions
+    product = Chem.RemoveHs(product)
+    Chem.SanitizeMol(product)
+    return product, f'reaction "{smirks}" applied {i_reaction} time(s)' if i_reaction else None
+
+def apply_tautomerisation_transformations(mol: Chem.Mol) -> tuple[Chem.Mol, list[str]]:
+    '''
+    Applies the tautomerisation transformations to a molecule. The transformations are based on the RDKit blog. There is no
+    way for the function to fail. If the molecule is not transformed, the original molecule is returned.
+    :param mol: input molecule
+    :return: tuple with the transformed molecule, a message with the list of transformations applied and a message with errors
+    '''
+
+    # transformation reactions taken from https://hub.knime.com/kmansouri/spaces/Public/QSAR-ready_2.5.8~5TRvnGfMJsgTkcZu/current-state
+    # the original RXN SMARTS is commented out and replaced with the RDKit SMARTS that contains the atom mapping, including for hydrogens
+    tautomerism_reactions = [
+        # nitro group
+        r'[*:4]-[n:3](:[o:2]):[o:1]>>[#8-:2]-[#7+:3](-[*:4])=[O:1]',  # r'[*]N(:O):O>>[O-][N+]([*])=O',
+        r'[H][#8:1]-[#7:3](-[*:4])=[O:2]>>[#8-:1]-[#7+:3](-[*:4])=[O:2]',  # r'[H]ON([*])=O>>[O-][N+]([*])=O',
+        r'[*:4][N:3](=[O:2])=[O:1]>>[#8-:1]-[#7+:3](-[*:4])=[O:2]',  # r'[*]N(=O)=O>>[O-][N+]([*])=O',
+        r'[H][#8:1]-[#7:3](-[*:4])-[#8:2][H]>>[#8-:1]-[#7+:3](-[*:4])=[O:2]',  # r'[H]ON(O)[*]>>[O-][N+]([*])=O',
+        r'[H][N:3]([*:4])(=[O:2])=[O:1]>>[#8-:2]-[#7+:3](-[*:4])=[O:1]',  # r'[H][N]([*])(=O)=O>>[O-][N+]([*])=O',
+
+        # imine - enamine, the nitrogen is not allowed to be in a three member ring (aziridine), removed cis/trans isomerism from the reaction
+        r'[H:8][#7;!r3:2](-[$([#1,*]):1])-[#6:3](-[$([#1,*]):7])=[#6:4](-[$([#1,*]):5])-[$([#1,*]):6]>>[H:8][C:4]([$([#1,*]):6])([$([#1,*]):5])[#6:3](-[$([#1,*]):7])=[#7:2]-[$([#1,*]):1]', # r'[H][#7;!R0](-[$([#1,*])])-[#6;!R0](\[$([#1,*])])=[#6;!R0](\[$([#1,*])])-[$([#1,*])]>>[$([#1,*])]\[#6](=[#7]\[$([#1,*])])-[#6](-[$([#1,*])])-[$([#1,*])]',
+
+        # third transformation block
+        r'[H:7][#7:2](-[*,#1:1])-[#7:3]=[#6:4](-[*,#1:5])-[*,#1:6]>>[H:7][C:4]([*,#1:5])([*,#1:6])[#7:3]=[#7:2]-[*,#1:1]', # r'[H][#7](-[$([#1,*])])\[#7]=[#6](\[$([#1,*])])-[$([#1,*])]>>[$([#1,*])]-[#6](-[$([#1,*])])\[#7]=[#7]\[$([#1,*])]',
+        r'[H:7][#8:2]-[#6:1](-[*,#1:6])=[#6:5](-[*,#1:4])-[*,#1:3]>>[H:7][C:5]([*,#1:3])([*,#1:4])[#6:1](-[*,#1:6])=[O:2]', # r'[H][#8]\[#6](-[$([#1,*])])=[#6](/[$([#1,*])])-[$([#1,*])]>>[$([#1,*])]-[#6](-[$([#1,*])])-[#6](-[$([#1,*])])=O',
+        r'[H:4][#8:1][C:2]#[*,#1:3]>>[H:4][*,#1:3]=[C:2]=[O:1]',  # r'[H][#8]C#[$([#1,*])]>>O=C=[$([#1,*])]',
+        r'[H:8][#8:6]-[#6:3](-[#8:4][H:7])-[#6:2](-[*,#1:1])=[O:5]>>[H:8][#8:5]-[#6:2](-[*,#1:1])-[#6:3](=[O:6])-[#8:4][H:7]', # r'[H][#8]-[#6](-[#8][H])-[#6](-[$([#1,*])])=O>>[#8]-[#6](-[$([#1,*])])-[#6](-[#8])=O',
+        r'[*,#1:1]-[#7-:2][N+:3]#[N:4]>>[*,#1:1]-[#7:2]=[N+:3]=[#7-:4]',  # r'[$([#1,*])]-[#7-][N+]#N>>[$([#1,*])]-[#7]=[N+]=[#7-]',
+
+        # fourth transformation block
+        r'[H:15][C:3]1([#6:7](-[*,#1:9])=[O:8])[#6:2](-[*,#1:10])=[#7:1]-[#6:6](-[*,#1:11])=[#6:5](-[*,#1:12])[C:4]1([*,#1:13])[*,#1:14]>>[H:15][#7:1]-1-[#6:6](-[*,#1:11])=[#6:5](-[*,#1:12])[C:4]([*,#1:13])([*,#1:14])[#6:3](-[#6:7](-[*,#1:9])=[O:8])=[#6:2]-1-[*,#1:10]', # r'[H]C1([#6](-[*,#1])=O)[#6](-[*,#1])=[#7]-[#6](-[*,#1])=[#6](-[*,#1])C1([*,#1])[*,#1]>>[H][#7]-1-[#6](-[*,#1])=[#6](-[*,#1])C([*,#1])([*,#1])[#6](-[#6](-[*,#1])=O)=[#6]-1-[*,#1]',
+        r'[H:6][C:3]([*,#1:4])([*,#1:5])[#7:2]=[O:1]>>[H:6][#8:1]\[#7:2]=[#6:3](\[*,#1:5])-[*,#1:4]', # r'[H]C([$([#1,*])])([$([#1,*])])[#7]=O>>[H][#8]\[#7]=[#6](\[$([#1,*])])-[$([#1,*])]',
+        r'[H:7][#8:4][S:3](=[O:5])([#8:6][H])=[#7:2]-[*,#1:1]>>[H:7][#8:4][S:3](=[O:6])(=[O:5])[#7:2]=[*,#1:1]', # r'[H][#8]S(=O)([#8][H])=[#7]-[$([#1,*])]>>[H][#8]S(=O)(=O)[#7]=[$([#1,*])]',
+        r'[H][#7:2](-[*,#1:1])[N+:3]#[N:4]>>[*,#1:1]-[#7:2]=[N:3]#[N:4]', # r'[H][#7](-[$([#1,*])])[N+]#N>>[$([#1,*])]-[#7]=N#N',
+        r'[H][#7:4]=[N+:3]=[#7:2]-[*,#1:1]>>[*,#1:1]-[#7:2]=[N:3]#[N:4]', # r'[H][#7]=[N+]=[#7]-[$([#1,*])]>>[$([#1,*])]-[#7]=N#N',
+        r'[H][N:1]([H])([*,#1:2])([*,#1:4])[*,#1:3]>>[*,#1:2]-[#7:1](-[*,#1:4])-[*,#1:3]', # r'[H][N]([H])([$([#1,*])])([$([#1,*])])[$([#1,*])]>>[$([#1,*])]-[#7](-[$([#1,*])])-[$([#1,*])]',
+        r'[H][N:1]([H])([*,#1:2])=[*,#1:3]>>[*,#1:2]-[#7:1]=[*,#1:3]', # r'[H][N]([H])([$([#1,*])])=[$([#1,*])]>>[$([#1,*])]-[#7]=[$([#1,*])]',
+        r'[H:4][N-:3]#[N+:2][*,#1:1]>>[H:4]\[#7:3]=[#7:2]/[*,#1:1]', # r'[H][N-]#[N+][$([#1,*])]>>[$([#1,*])]-[#7]=[#7]'
+    ]
+
+    messages = []
+    with Rdkit_operation() as sio:
+        try:
+            product = mol
+            for smirks in tautomerism_reactions:
+                product, message = apply_reaction(smirks, product)
+                if message:
+                    messages.append(message)
+            if messages:
+                messages = ', '.join(messages)
+            else:
+                messages = None
+            error = None
+        except Exception as ex:
+            log.error(ex)
+            error = str(ex)
+            product = mol
+    return product, messages, error
+
+
 
 def standardise_mol(mol: Chem.Mol, ops: list[str]=None)  -> tuple[Chem.Mol, str]:
     """
@@ -322,14 +387,12 @@ def standardise_mol(mol: Chem.Mol, ops: list[str]=None)  -> tuple[Chem.Mol, str]
                 'cleanup' -> applies the rdMolStandardize.Cleanup operation
                 'uncharge' -> returns the uncharged molecule (applies only if only one fragment)
                 'addHs' -> adds explicit hydrogen atoms
-                'remove_stereo' -> removes stereochemistry (R/S and cis/trans)
-                'tautomerise' -> derives the canonical tautomer
     :return: tuple with resulting mol and warnings/errors during the standardisation
     """
     if ops is None:
-        ops = ['cleanup', 'uncharge', 'addHs', 'remove_stereo', 'tautomerise']
+        ops = ['cleanup', 'uncharge', 'addHs', ]
 
-    all_ops = ['cleanup', 'uncharge', 'addHs', 'tautomerise', 'remove_stereo']
+    all_ops = ['cleanup', 'uncharge', 'addHs']
     # check the standardisation operations requested are valid
     for op in ops:
         if op not in all_ops:
@@ -351,10 +414,6 @@ def standardise_mol(mol: Chem.Mol, ops: list[str]=None)  -> tuple[Chem.Mol, str]
                         mol_std = rdMolStandardize.ChargeParent(mol_std)
                 elif op == 'addHs':
                     mol_std = Chem.AddHs(mol_std)
-                elif op == 'tautomerise':
-                    mol_std, _, _ = derive_canonical_tautomer(mol_std)
-                elif op == 'remove_stereo':
-                    mol_std = remove_stereo(mol_std)
         except Exception as ex:
              log.error(ex)
         error_warning = val if (val:=sio.getvalue()) else None
@@ -369,12 +428,7 @@ def standardise_mol(mol: Chem.Mol, ops: list[str]=None)  -> tuple[Chem.Mol, str]
 
 
     return (mol_std, error_warning)
-#
-# from rdkit import Chem
-# i_mol = 0
-# mol = mols[i_mol]
-# mol = Chem.AddHs(mol)
-# [atom.GetSymbol() for atom in mol.GetAtoms()]
+
 
 
 def check_mol(mol: Chem.Mol, ops: dict=None)  -> bool:
@@ -392,6 +446,7 @@ def check_mol(mol: Chem.Mol, ops: dict=None)  -> bool:
                 'molecular_weight': {'min': 0, 'max': 1000} -> checks that the molecular weight is within the specified range
                 'max_number_rings': 5 -> checks that the molecule does not have more than the maximum number of rings
                 'allowed_hybridisations': ['UNSPECIFIED', 'SP2', 'SP3', 'SP'] -> checks that only specified hybridisations are present
+                'allowed_total_charge' -> checks that the total charge is one of the permitted values, typically 0
     :return: True if none of the checker operations fails, and False otherwise
     """
     if ops is None:
@@ -402,7 +457,8 @@ def check_mol(mol: Chem.Mol, ops: dict=None)  -> bool:
                'allowed_bonds': ['SINGLE', 'DOUBLE', 'TRIPLE', 'AROMATIC'],
                'molecular_weight': {'min': 0, 'max': 1000},
                'max_number_rings': 5,
-               'allowed_hybridisations': ['UNSPECIFIED', 'SP2', 'SP3', 'SP']
+               'allowed_hybridisations': ['UNSPECIFIED', 'SP2', 'SP3', 'SP'],
+               'allowed_total_charge': [0]
                }
 
     try:
@@ -461,6 +517,13 @@ def check_mol(mol: Chem.Mol, ops: dict=None)  -> bool:
                 if atom.GetHybridization().name not in ops['allowed_hybridisations']:
                     log.info(f'atom {atom.GetHybridization().name} not in the allowed hybridisations {ops["allowed_hybridisations"]}')
                     return False
+
+        # check the allowed total charge
+        if 'allowed_total_charge' in ops:
+            total_charge = Chem.GetFormalCharge(mol)
+            if total_charge not in ops['allowed_total_charge']:
+                log.info(f'total charge {total_charge} not in the allowed charges {ops["allowed_total_charge"]}')
+                return False
 
     except Exception as ex:
         log.error(ex)
