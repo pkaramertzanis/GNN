@@ -24,6 +24,12 @@ The purpose of this script is to normalise the dataset so that it contains the f
 
 Tne idea is that each source will generate one mor more such files that can be combined into a single dataset and
 aggregated at different levels (e.g. endpoint, assay, molecule) for modelling.
+
+Useful resources
+
+in vitro, gene mutation in mammalian cells
+https://www.eurofins.de/biopharma-product-testing-dach-en/validated-standard-testing-methods/hprt-assay/
+https://www.fda.gov/regulatory-information/search-fda-guidance-documents/redbook-2000-ivc1c-mouse-lymphoma-thymidine-kinase-gene-mutation-assay
 '''
 
 # setup logging
@@ -77,9 +83,9 @@ datasets = datasets[cols].rename({'CAS Number': 'CAS number',
 datasets = datasets.reset_index().rename({'index': 'source record ID'}, axis='columns')
 
 # check the type of endpoints and test type
-stats = datasets.groupby(['Type of method', 'Endpoint', 'Test type'])[['origin', 'CAS number']].agg(**{'origin': pd.NamedAgg(column='origin', aggfunc=lambda x: ';'.join(pd.Series(x).drop_duplicates().sort_values().to_list())),
-                                                                                    'count (CAS number)': pd.NamedAgg(column='CAS number', aggfunc=lambda x: pd.Series(x).dropna().drop_duplicates().nunique())
-                                                                                     }).reset_index().sort_values(by='count (CAS number)', ascending=False)
+stats = datasets.groupby(['Type of method', 'Endpoint', 'Test type', 'Test organisms (species)'], dropna=False)[['origin', 'CAS number']].agg(**{'origin': pd.NamedAgg(column='origin', aggfunc=lambda x: ';'.join(pd.Series(x).drop_duplicates().sort_values().to_list())),
+                                                                                                       'count (CAS number)': pd.NamedAgg(column='CAS number', aggfunc=lambda x: pd.Series(x).dropna().drop_duplicates().nunique())
+                                                                                                      }).reset_index().sort_values(by='count (CAS number)', ascending=False)
 log.info(stats.to_markdown())
 
 # keep only the records for which the smiles is present
@@ -87,11 +93,13 @@ msk = datasets['smiles'].notnull()
 log.info(f'removing {(~msk).sum()} records without smiles')
 datasets = datasets.loc[msk]
 
-# keep only records that are positive or negative
-msk = datasets['genotoxicity'].isin(['Positive', 'Negative'])
-log.info(f'removing {(~msk).sum()} records that are not positive or negative')
+# keep only records that are positive, negative or equivocal (to be converted to ambiguous)
+msk = datasets['genotoxicity'].isin(['Positive', 'Negative', 'Equivocal'])
+log.info(f'removing {(~msk).sum()} records that are not positive, negative or equivocal')
 datasets = datasets.loc[msk]
-datasets['genotoxicity'] = datasets['genotoxicity'].str.lower()
+datasets['genotoxicity'] = datasets['genotoxicity'].replace({'Negative': 'negative',
+                                                             'Positive': 'positive',
+                                                             'Equivocal': 'ambiguous'})
 
 # cast the genotoxicity data to the expected, flat format
 tox_data = []
@@ -101,8 +109,8 @@ assay = 'bacterial reverse mutation assay'
 endpoint = 'in vitro gene mutation study in bacteria'
 main_strains = ['TA 100', 'TA 98', 'TA 1535', 'TA 1537', 'TA 1538', 'TA 97', 'TA 102', 'TA 104']
 msk_keep = ((datasets['Test type'] == 'Bacterial Reverse Mutation Assay (e.g. Ames Test)')
-       & (datasets['Test organisms (species)'] == 'Salmonella typhimurium')
-       )
+            & (datasets['Test organisms (species)'] == 'Salmonella typhimurium')
+            )
 log.info('processing bacterial reverse mutation assay, in vitro gene mutation study in bacteria, Salmonella typhimurium')
 log.info(f'{msk_keep.sum()} records processed, {(~msk_keep).sum()} records left')
 log.info(datasets.loc[msk_keep, ['Test organisms (species)', 'Strain', 'Metabolic activation', 'genotoxicity']].value_counts())
@@ -135,7 +143,7 @@ for idx, datapoint in datasets.loc[msk_keep].iterrows():
              'endpoint': endpoint,
              'assay': assay,
              'cell line/species': 'Salmonella typhimurium'+' ('+(datapoint['Strain'] if datapoint['Strain'] in main_strains else 'unknown')+')',
-             'metabolic activation': 'yes' if datapoint['Metabolic activation']=='With S9' else 'no' if datapoint['Metabolic activation']=='Without S9' else 'unknown',
+             'metabolic activation': 'to be filled',
              'genotoxicity mode of action': moa_map.get(datapoint['Strain'], 'unknown'),
              'gene': gene_map.get(datapoint['Strain'], 'unknown'),
              'notes': None,
@@ -143,7 +151,20 @@ for idx, datapoint in datasets.loc[msk_keep].iterrows():
              'reference': None,
              'additional source data': None
              }
-    tox_data.append(entry)
+    if datapoint['Metabolic activation'] == 'With S9':
+        entry['metabolic activation'] = 'yes'
+        tox_data.append(entry)
+    elif datapoint['Metabolic activation'] == 'Without S9':
+        entry['metabolic activation'] = 'no'
+        tox_data.append(entry)
+    elif datapoint['Metabolic activation'] == 'With or Without':
+        entry['metabolic activation'] = 'yes'
+        tox_data.append(entry)
+        entry['metabolic activation'] = 'no'
+        tox_data.append(entry)
+    else:
+        entry['metabolic activation'] = 'unknown'
+        tox_data.append(entry)
 datasets = datasets.loc[~msk_keep]
 
 # assay: bacterial reverse mutation assay, endpoint: in vitro gene mutation study in bacteria, Escherichia coli
@@ -173,7 +194,7 @@ for idx, datapoint in datasets.loc[msk_keep].iterrows():
              'endpoint': endpoint,
              'assay': assay,
              'cell line/species': 'Escherichia coli'+' ('+(datapoint['Strain'] if datapoint['Strain'] in main_strains else 'unknown')+')',
-             'metabolic activation': 'yes' if datapoint['Metabolic activation']=='With S9' else 'no' if datapoint['Metabolic activation']=='Without S9' else 'unknown',
+             'metabolic activation': 'to be filled',
              'genotoxicity mode of action': moa_map.get(datapoint['Strain'], 'unknown'),
              'gene': gene_map.get(datapoint['Strain'], 'unknown'),
              'notes': None,
@@ -181,7 +202,20 @@ for idx, datapoint in datasets.loc[msk_keep].iterrows():
              'reference': None,
              'additional source data': None
              }
-    tox_data.append(entry)
+    if datapoint['Metabolic activation'] == 'With S9':
+        entry['metabolic activation'] = 'yes'
+        tox_data.append(entry)
+    elif datapoint['Metabolic activation'] == 'Without S9':
+        entry['metabolic activation'] = 'no'
+        tox_data.append(entry)
+    elif datapoint['Metabolic activation'] == 'With or Without':
+        entry['metabolic activation'] = 'yes'
+        tox_data.append(entry)
+        entry['metabolic activation'] = 'no'
+        tox_data.append(entry)
+    else:
+        entry['metabolic activation'] = 'unknown'
+        tox_data.append(entry)
 datasets = datasets.loc[~msk_keep]
 
 # assay: in vitro mammalian chromosome aberration test, endpoint: in vitro chromosome aberration study in mammalian cells
@@ -189,10 +223,10 @@ datasets = datasets.loc[~msk_keep]
 #       this is a general issue with the in vitro cytogenicity data)
 assay = 'in vitro mammalian chromosome aberration test'
 endpoint = 'in vitro chromosome aberration study in mammalian cells'
-msk_keep = (datasets['Test type'] == 'in Vitro Mammalian Chromosome Aberration Test')
+msk_keep = (datasets['Type of method']=='in Vitro') & (datasets['Test type'] == 'in Vitro Mammalian Chromosome Aberration Test')
 # .. combine the species "Human" with the strain "Lymphocytes"
-datasets.loc[msk_keep, 'Strain'] = np.where((datasets.loc[msk_keep, 'Test organisms (species)']=='Human') & (datasets.loc[msk_keep, 'Strain']=='Lymphocytes'), 'Human lymphocytes', datasets.loc[msk_keep, 'Strain'])
-main_species_cell_line = ['Chinese Hamster Lung (CHL)', 'Chinese Hamster Ovary (CHO)', 'Chinese Hamster Lung Fibroblasts (V79)', 'Human lymphocytes']
+datasets.loc[msk_keep, 'Strain'] = np.where(datasets.loc[msk_keep, 'Strain']=='Lymphocytes', 'lymphocytes', datasets.loc[msk_keep, 'Strain'])
+main_species_cell_line = ['Chinese Hamster Lung (CHL)', 'Chinese Hamster Ovary (CHO)', 'Chinese Hamster Lung Fibroblasts (V79)', 'lymphocytes']
 log.info('processing in vitro mammalian chromosome aberration test, in vitro chromosome aberration study in mammalian cells')
 log.info(f'{msk_keep.sum()} records processed, {(~msk_keep).sum()} records left')
 log.info(datasets.loc[msk_keep, ['Test organisms (species)', 'Strain', 'Metabolic activation', 'genotoxicity']].value_counts())
@@ -210,7 +244,7 @@ for idx, datapoint in datasets.loc[msk_keep].iterrows():
              'endpoint': endpoint,
              'assay': assay,
              'cell line/species': datapoint['Strain'] if datapoint['Strain'] in main_species_cell_line else 'unknown',
-             'metabolic activation': 'yes' if datapoint['Metabolic activation']=='With S9' else 'no' if datapoint['Metabolic activation']=='Without S9' else 'unknown',
+             'metabolic activation': 'to be filled',
              'genotoxicity mode of action': moa_map.get(datapoint['Strain'], 'unknown'),
              'gene': gene_map.get(datapoint['Strain'], 'unknown'),
              'notes': None,
@@ -218,16 +252,30 @@ for idx, datapoint in datasets.loc[msk_keep].iterrows():
              'reference': None,
              'additional source data': None
              }
-    tox_data.append(entry)
+    if datapoint['Metabolic activation'] == 'With S9':
+        entry['metabolic activation'] = 'yes'
+        tox_data.append(entry)
+    elif datapoint['Metabolic activation'] == 'Without S9':
+        entry['metabolic activation'] = 'no'
+        tox_data.append(entry)
+    elif datapoint['Metabolic activation'] == 'With or Without':
+        entry['metabolic activation'] = 'yes'
+        tox_data.append(entry)
+        entry['metabolic activation'] = 'no'
+        tox_data.append(entry)
+    else:
+        entry['metabolic activation'] = 'unknown'
+        tox_data.append(entry)
 datasets = datasets.loc[~msk_keep]
 
 
-# assay: in vitro mammalian cell gene mutation test using the Hprt and xprt genes, endpoint: in vitro gene mutation study in mammalian cells
-assay = 'in vitro mammalian cell gene mutation test using the Hprt and xprt genes'
+# assay: unknown, endpoint: in vitro gene mutation study in mammalian cells
+assay = 'unknown'
 endpoint = 'in vitro gene mutation study in mammalian cells'
-msk_keep = (datasets['Test type'] == 'Mammalian Cell Gene Mutation Assay')
-main_species_cell_line = ['Chinese Hamster Lung (CHL)', 'Chinese Hamster Ovary (CHO)', 'Chinese Hamster Lung Fibroblasts (V79)', 'L5178Y Cells']
-log.info('processing in vitro mammalian cell gene mutation test using the Hprt and xprt genes, in vitro gene mutation study in mammalian cells')
+msk_keep = (datasets['Type of method']=='in Vitro') & (datasets['Test type'].str.contains(r'(?i)mammalian.*gene\s+mutation'))
+datasets.loc[msk_keep, 'Strain'] = np.where(datasets.loc[msk_keep, 'Strain']=='Lymphoma L5178Y Cells', 'mouse lymphoma L5178Y cells', datasets.loc[msk_keep, 'Strain'])
+main_species_cell_line = ['Chinese Hamster Lung (CHL)', 'Chinese Hamster Ovary (CHO)', 'Chinese Hamster Lung Fibroblasts (V79)', 'mouse lymphoma L5178Y cells']
+log.info('processing in vitro gene mutation study in mammalian cells')
 log.info(f'{msk_keep.sum()} records processed, {(~msk_keep).sum()} records left')
 log.info(datasets.loc[msk_keep, ['Test organisms (species)', 'Strain', 'Metabolic activation', 'genotoxicity']].value_counts())
 for idx, datapoint in datasets.loc[msk_keep].iterrows():
@@ -244,7 +292,7 @@ for idx, datapoint in datasets.loc[msk_keep].iterrows():
              'endpoint': endpoint,
              'assay': assay,
              'cell line/species': datapoint['Strain'] if datapoint['Strain'] in main_species_cell_line else 'unknown',
-             'metabolic activation': 'yes' if datapoint['Metabolic activation']=='With S9' else 'no' if datapoint['Metabolic activation']=='Without S9' else 'unknown',
+             'metabolic activation': 'to be filled',
              'genotoxicity mode of action': moa_map.get(datapoint['Strain'], 'unknown'),
              'gene': gene_map.get(datapoint['Strain'], 'unknown'),
              'notes': None,
@@ -252,10 +300,70 @@ for idx, datapoint in datasets.loc[msk_keep].iterrows():
              'reference': None,
              'additional source data': None
              }
-    tox_data.append(entry)
+    if datapoint['Metabolic activation'] == 'With S9':
+        entry['metabolic activation'] = 'yes'
+        tox_data.append(entry)
+    elif datapoint['Metabolic activation'] == 'Without S9':
+        entry['metabolic activation'] = 'no'
+        tox_data.append(entry)
+    elif datapoint['Metabolic activation'] == 'With or Without':
+        entry['metabolic activation'] = 'yes'
+        tox_data.append(entry)
+        entry['metabolic activation'] = 'no'
+        tox_data.append(entry)
+    else:
+        entry['metabolic activation'] = 'unknown'
+        tox_data.append(entry)
 datasets = datasets.loc[~msk_keep]
 
 
+
+# assay: in vitro mammalian cell micronucleus test, endpoint: in vitro micronucleus study
+assay = 'in vitro mammalian cell micronucleus test'
+endpoint = 'in vitro micronucleus study'
+msk_keep = (datasets['Type of method']=='in Vitro') & (datasets['Test type'].str.contains(r'(?i)micronucleus'))
+datasets.loc[msk_keep, 'Strain'] = np.where(datasets.loc[msk_keep, 'Strain']=='Lymphocytes', 'lymphocytes', datasets.loc[msk_keep, 'Strain'])
+main_species_cell_line = ['lymphocytes']
+log.info('processing in vitro mammalian cell micronucleus test, in vitro micronucleus study')
+log.info(f'{msk_keep.sum()} records processed, {(~msk_keep).sum()} records left')
+log.info(datasets.loc[msk_keep, ['Test organisms (species)', 'Strain', 'Metabolic activation', 'genotoxicity']].value_counts())
+for idx, datapoint in datasets.loc[msk_keep].iterrows():
+    moa_map = {
+               }
+    gene_map = {
+               }
+    entry = {'source': f'QSAR Toolbox, {datapoint["Database"]} database',
+             'raw input file': datapoint['origin'],
+             'CAS number': datapoint['CAS number'],
+             'substance name': None,
+             'smiles': datapoint['smiles'],
+             'in vitro/in vivo': 'in vitro',
+             'endpoint': endpoint,
+             'assay': assay,
+             'cell line/species': datapoint['Strain'] if datapoint['Strain'] in main_species_cell_line else 'unknown',
+             'metabolic activation': 'to be filled',
+             'genotoxicity mode of action': moa_map.get(datapoint['Strain'], 'unknown'),
+             'gene': gene_map.get(datapoint['Strain'], 'unknown'),
+             'notes': None,
+             'genotoxicity': datapoint['genotoxicity'],
+             'reference': None,
+             'additional source data': None
+             }
+    if datapoint['Metabolic activation'] == 'With S9':
+        entry['metabolic activation'] = 'yes'
+        tox_data.append(entry)
+    elif datapoint['Metabolic activation'] == 'Without S9':
+        entry['metabolic activation'] = 'no'
+        tox_data.append(entry)
+    elif datapoint['Metabolic activation'] == 'With or Without':
+        entry['metabolic activation'] = 'yes'
+        tox_data.append(entry)
+        entry['metabolic activation'] = 'no'
+        tox_data.append(entry)
+    else:
+        entry['metabolic activation'] = 'unknown'
+        tox_data.append(entry)
+datasets = datasets.loc[~msk_keep]
 
 
 

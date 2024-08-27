@@ -15,6 +15,9 @@ import math
 from models.PyTorch_train import train_eval
 from models.metrics import plot_metrics_convergence
 
+SCHEDULER_DECAY = 0.95
+DROP_LAST_TRAINING = False # .. we can drop the last to have stable gradients
+
 def nested_cross_validation(model: torch.nn.Module,
                             dsets: dict,
                             splits: pd.DataFrame,
@@ -46,6 +49,10 @@ def nested_cross_validation(model: torch.nn.Module,
     # work out the number of folds from the splits
     K_FOLD_OUTER = splits['outer fold'].nunique()
     K_FOLD_INNER = splits['inner fold'].nunique()
+
+    torch.manual_seed(PYTORCH_SEED)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(PYTORCH_SEED)
 
     # compute the overall fraction of positives (for all tasks)
     y_all = []
@@ -92,7 +99,7 @@ def nested_cross_validation(model: torch.nn.Module,
                                      idx in splits.loc[msk, 'train indices'].iloc[0].tolist()]
                         batch_size = round(BATCH_SIZE_MAX * len(train_set) / float(train_set_size_max))
                         train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True,
-                                                  drop_last=True)  # .. we drop the last to have stable gradients
+                                                  drop_last=DROP_LAST_TRAINING)  # .. we drop the last to have stable gradients
                         train_loaders.append(train_loader)
                         eval_set = [rec for idx, rec in enumerate(dsets[task]['dset']) if
                                     idx in splits.loc[msk, 'eval indices'].iloc[0].tolist()]
@@ -102,9 +109,6 @@ def nested_cross_validation(model: torch.nn.Module,
                         log.info(
                             f'task {task}, train set: {len(train_set):4d} data points in {len(train_loader)} batches, eval set: {len(eval_set):4d} data points in {len(eval_loader)} batches')
 
-                    torch.manual_seed(PYTORCH_SEED)
-                    if torch.cuda.is_available():
-                        torch.cuda.manual_seed_all(PYTORCH_SEED)
 
                     # set the model
                     n_classes = [2] * len(dsets)
@@ -128,7 +132,7 @@ def nested_cross_validation(model: torch.nn.Module,
                                                  weight_decay=optimiser_parameters['weight_decay'], amsgrad=False)
 
                     # scheduler
-                    lambda_group = lambda epoch: 0.97 ** epoch
+                    lambda_group = lambda epoch: SCHEDULER_DECAY ** epoch
                     scheduler = LambdaLR(optimizer, lr_lambda=[lambda_group])
 
                     # train the model
@@ -195,7 +199,7 @@ def nested_cross_validation(model: torch.nn.Module,
             print(len(train_eval_set))
             batch_size = math.ceil(BATCH_SIZE_MAX * len(train_eval_set) / float(train_eval_set_size_max))
             train_eval_loader = DataLoader(train_eval_set, batch_size=batch_size, shuffle=True,
-                                           drop_last=True)  # .. we drop the last to have stable gradients
+                                           drop_last=DROP_LAST_TRAINING)
             train_eval_loaders.append(train_eval_loader)
             test_set = [rec for idx, rec in enumerate(dsets[task]['dset']) if
                         idx in splits.loc[msk, 'test indices'].iloc[0].tolist()]
@@ -203,11 +207,7 @@ def nested_cross_validation(model: torch.nn.Module,
             batch_size = math.ceil(BATCH_SIZE_MAX * len(test_set) / float(test_set_size_max))
             test_loader = DataLoader(test_set, batch_size=batch_size, shuffle=True, drop_last=False)
             test_loaders.append(test_loader)
-        # .. train the model
-        # .. set the seed for reproducibility
-        torch.manual_seed(PYTORCH_SEED)
-        if torch.cuda.is_available():
-            torch.cuda.manual_seed_all(PYTORCH_SEED)
+
 
         # set the model
         configuration = [configuration for configuration in configurations if
@@ -220,6 +220,8 @@ def nested_cross_validation(model: torch.nn.Module,
         n_classes = [2] * len(dsets)
         net = model(n_input=fingerprint_parameters['fpSize'], **model_parameters, n_classes=n_classes)
         net.to(device)
+
+
 
         # if specified, scale the loss so that each class contributes according to its size or equally
         # default reduction is mean
@@ -238,7 +240,7 @@ def nested_cross_validation(model: torch.nn.Module,
                                      amsgrad=False)
 
         # scheduler
-        lambda_group = lambda epoch: 0.97 ** epoch
+        lambda_group = lambda epoch: SCHEDULER_DECAY ** epoch
         scheduler = LambdaLR(optimizer, lr_lambda=[lambda_group])
 
         # train the model, double the number of epochs for the final training

@@ -67,8 +67,8 @@ task_specifications = [
     {'filters': {'assay': ['in vitro mammalian chromosome aberration test']},
      'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
     ]
-outp_sdf = Path(r'data/combined_dev/sdf/genotoxicity_dataset.sdf')
-outp_tab = Path(r'data/combined_dev/tabular/genotoxicity_dataset.xlsx')
+outp_sdf = Path(r'data/combined/sdf/genotoxicity_dataset.sdf')
+outp_tab = Path(r'data/combined/tabular/genotoxicity_dataset.xlsx')
 tasks = create_sdf(flat_datasets = flat_datasets,
                    task_specifications = task_specifications,
                    outp_sdf = outp_sdf,
@@ -89,7 +89,7 @@ SCALE_LOSS_TASK_SIZE = None # how to scale the loss function, can be 'equal task
 SCALE_LOSS_CLASS_SIZE = 'equal class (task)' # how to scale the loss function, can be 'equal class (task)', 'equal class (global)' or None
 
 # location to store the metrics logs
-metrics_history_path = Path(rf'D:\myApplications\local\2024_01_21_GCN_Muta\output\iteration_dev')/MODEL_NAME
+metrics_history_path = Path(rf'D:\myApplications\local\2024_01_21_GCN_Muta\output\iteration81')/MODEL_NAME
 metrics_history_path.mkdir(parents=True, exist_ok=True)
 
 fingerprint_parameters = {'radius': 2,
@@ -98,7 +98,7 @@ fingerprint_parameters = {'radius': 2,
                           }
 
 model_parameters = {'hidden_layers': [[512, 512], [256, 256]],  # [64, 128, 256]
-                    'dropout': [0.5],  # [0.5, 0.6, 0.7, 0.8],
+                    'dropout': [0.5, 0.6],  # [0.5, 0.6, 0.7, 0.8],
                     'activation_function': [torch.nn.functional.leaky_relu],
                     'learning_rate': [0.002],  # [0.001, 0.005, 0.01]
                     'weight_decay': [2.e-3],  # [1.e-5, 1e-4, 1e-3]

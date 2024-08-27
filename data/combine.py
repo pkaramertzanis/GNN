@@ -12,22 +12,17 @@ The user can decide the level of the aggregation, e.g. by
 - metabolic activation
 - genotoxicity mode of action
 - gene
-and the script will use the canonical smiles to aggregate a summary call. In the case of both positive and
-negative calls the user can decide to keep the positive call, the negative call, set the call to ambiguous or
-eliminate the structure. Multiple aggregation levels can be selected. in vitro/in vivo, endpoints, assays, cell lines/species, metabolic
-activations, genotoxicity mode of action, and genes can be filtered out.
+and the script will use the canonical smiles to aggregate a summary call. If there are more than one genotoxicity calls
+after aggregation, the call will be set to ambiguous. Hence, an ambiguous final genotoxicity call may be because it was
+ambgiguous in the source data. The different tasks can use different aggregation levels.
 
 The SDF file will contain one mol block per canonical smiles and a record ID will be set using a running index. Each
 mol block will contain the following fields:
 - genotoxicity: the genotoxicity call, including its full lineage
 
-
 The mol block name will be set to the dataset record ID.
 
-This script can be called repeatedly to examine:
- - how different aggregations affect the modelling performance in multitask modelling
- - how different standardisations affect the modelling performance
- - how keeping the ambiguous calls affects the modelling performance
+This script can be called repeatedly to examine how different aggregations affect the modelling performance in multitask modelling
 '''
 
 # setup logging
@@ -184,8 +179,6 @@ def create_sdf(flat_datasets: list,
                .rename({'record ID': 'source record ID'}, axis='columns')
                .reset_index(drop=True).reset_index().rename({'index': 'record ID'}, axis=1))
 
-    # ----
-
     aggregated_datasets = []
     for i_task, task_specification in enumerate(task_specifications):
         filters = task_specification['filters']
@@ -213,9 +206,9 @@ def create_sdf(flat_datasets: list,
         # aggregate
         aggregated_dataset = (aggregated_dataset.groupby(['smiles_std'] + task_aggregation_cols)[['genotoxicity', 'CAS number', 'source record ID', 'smiles']]
                .agg({'genotoxicity': lambda vals: x[0] if len(x:=vals.dropna().drop_duplicates().to_list())==1 else 'ambiguous' if len(x)>1 else 'not available',
-                   'CAS number': lambda rns: ', '.join(sorted(rns.dropna().drop_duplicates().to_list())),
-                   'source record ID': lambda srids: ', '.join(sorted(srids.dropna().drop_duplicates().to_list())),
-                  'smiles':  lambda smis: ', '.join(sorted(smis.dropna().drop_duplicates().to_list()))
+                     'CAS number': lambda rns: ', '.join(sorted(rns.dropna().drop_duplicates().to_list())),
+                     'source record ID': lambda srids: ', '.join(sorted(srids.dropna().drop_duplicates().to_list())),
+                     'smiles':  lambda smis: ', '.join(sorted(smis.dropna().drop_duplicates().to_list()))
                   })
                .reset_index()
                )
