@@ -16,7 +16,7 @@ from models.PyTorch_train import train_eval
 from models.metrics import plot_metrics_convergence
 
 SCHEDULER_DECAY = 0.95
-DROP_LAST_TRAINING = False # .. we can drop the last to have stable gradients
+DROP_LAST_TRAINING = True # .. we can drop the last to have stable gradients and possibly NAN loss function due to lack of positives
 
 def nested_cross_validation(model: torch.nn.Module,
                             dsets: dict,
@@ -190,20 +190,16 @@ def nested_cross_validation(model: torch.nn.Module,
             len(idxs) for idxs in splits.loc[msk, 'test indices'])  # largest test set size among tasks
         train_eval_loaders, test_loaders = [], []
         for task in dsets:
-            print(task, len(dsets[task]['dset']))
             msk = (splits['outer fold'] == i_outer) & (splits['inner fold'] == 0) & (splits['task'] == task)
 
             train_eval_set = [rec for idx, rec in enumerate(dsets[task]['dset']) if
                               idx in splits.loc[msk, 'train indices'].iloc[0].tolist() + splits.loc[msk, 'eval indices'].iloc[0].tolist()]
-            # assert 1==0
-            print(len(train_eval_set))
             batch_size = math.ceil(BATCH_SIZE_MAX * len(train_eval_set) / float(train_eval_set_size_max))
             train_eval_loader = DataLoader(train_eval_set, batch_size=batch_size, shuffle=True,
                                            drop_last=DROP_LAST_TRAINING)
             train_eval_loaders.append(train_eval_loader)
             test_set = [rec for idx, rec in enumerate(dsets[task]['dset']) if
                         idx in splits.loc[msk, 'test indices'].iloc[0].tolist()]
-            print(len(test_set))
             batch_size = math.ceil(BATCH_SIZE_MAX * len(test_set) / float(test_set_size_max))
             test_loader = DataLoader(test_set, batch_size=batch_size, shuffle=True, drop_last=False)
             test_loaders.append(test_loader)

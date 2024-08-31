@@ -68,7 +68,7 @@ task_specifications = [
                                                                                       'Salmonella typhimurium (TA 98)',
                                                                                       'Salmonella typhimurium (TA 1537)'
                                                                                       ], 'metabolic activation': ['yes', 'no']},
-     'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay', 'cell line/species', 'metabolic activation']},
+     'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay',]}, #'cell line/species', 'metabolic activation']},
 
     {'filters': {'assay': ['in vitro mammalian cell micronucleus test']},
      'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
@@ -100,12 +100,12 @@ tasks = create_sdf(flat_datasets = flat_datasets,
                    outp_tab = outp_tab)
 # set general parameters
 PYTORCH_SEED = 1 # seed for PyTorch random number generator, it is also used for splits and shuffling to ensure reproducibility
-MINIMUM_TASK_DATASET = 480 # minimum number of data points for a task
-BATCH_SIZE_MAX = 1024 # maximum batch size (largest task, the smaller tasks are scaled accordingly so the number of batches is the same)
+MINIMUM_TASK_DATASET = 512 # minimum number of data points for a task
+BATCH_SIZE_MAX = 512 # maximum batch size (largest task, the smaller tasks are scaled accordingly so the number of batches is the same)
 K_FOLD_INNER = 5 # number of folds for the inner cross-validation
 K_FOLD_OUTER = 10 # number of folds for the outer cross-validation
 NUM_EPOCHS = 80 # number of epochs
-MODEL_NAME = 'AttentiveFP_GNN' # name of the model, can be 'MPNN_GNN', 'AttentiveFP_GNN' or 'GAT_GNN'
+MODEL_NAME = 'GAT_GNN' # name of the model, can be 'MPNN_GNN', 'AttentiveFP_GNN' or 'GAT_GNN'
 SCALE_LOSS_TASK_SIZE = None # how to scale the loss function, can be 'equal task' or None
 SCALE_LOSS_CLASS_SIZE = 'equal class (task)' # how to scale the loss function, can be 'equal class (task)', 'equal class (global)' or None
 
@@ -115,7 +115,7 @@ LOG_EPOCH_FREQUENCY = 10 # frequency to log the metrics during training
 
 
 # location to store the metrics logs
-metrics_history_path = Path(rf'D:\myApplications\local\2024_01_21_GCN_Muta\output\iteration94')/MODEL_NAME
+metrics_history_path = Path(rf'D:\myApplications\local\2024_01_21_GCN_Muta\output\iteration97')/MODEL_NAME
 metrics_history_path.mkdir(parents=True, exist_ok=True)
 
 
@@ -155,9 +155,9 @@ elif MODEL_NAME == 'GAT_GNN':
     model = GAT_GNN
     model_parameters = {'n_conv': [6],
                         'n_lin': [1],  # 1, 2, 3, 4]
-                        'n_heads': [4],
-                        'n_conv_hidden': [256],
-                        'n_lin_hidden': [128],  # [32, 64, 128, 256, 512]
+                        'n_heads': [3, 4],
+                        'n_conv_hidden': [120, 240],
+                        'n_lin_hidden': [64, 128],  # [32, 64, 128, 256, 512]
                         'v2': [True], # [True, False]
                         'dropout': [0.2],
                         'activation_function': [torch.nn.functional.leaky_relu],
@@ -188,7 +188,6 @@ for i_task, task in enumerate(tasks):
         log.warning(f'task {task} has less than {MINIMUM_TASK_DATASET} data points, skipping')
 
 
-# bubble plot with task size and percentage positives
 
 
 
@@ -284,7 +283,11 @@ plot_metrics_convergence_outer_average(metrics_history_path/'metrics_history.tsv
 roc_curve_outer_path = metrics_history_path/'roc_outer_average.png'
 plot_roc_curve_outer_average(metrics_history_path, roc_curve_outer_path)
 
-
+# report the balanced accuracy for the test set
+metrics_history_outer = pd.read_excel(metrics_history_path/'metrics_history_outer.xlsx', sheet_name='task')
+cols = ['outer fold'] + [col for col in metrics_history_outer.columns if 'test_balanced accuracy' in col]
+metrics_history_outer_summary = metrics_history_outer.loc[metrics_history_outer['outer fold']!='All', cols].melt(id_vars='outer fold', var_name='task', value_name='balanced accuracy (test)')
+log.info(metrics_history_outer_summary.groupby('task')['balanced accuracy (test)'].agg(['mean', 'min', 'max']))
 
 # ----------  delete after this line
 

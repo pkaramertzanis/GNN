@@ -23,7 +23,7 @@ from models.metrics import plot_metrics_convergence
 # metrics_history_path
 
 SCHEDULER_DECAY = 0.95
-DROP_LAST_TRAINING = False # .. we can drop the last to have stable gradients
+DROP_LAST_TRAINING = True # .. we can drop the last to have stable gradients and possibly NAN loss function due to lack of positives
 
 def nested_cross_validation(model: torch.nn.Module,
                             dsets: dict,
