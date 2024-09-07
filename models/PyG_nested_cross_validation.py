@@ -14,16 +14,23 @@ import math
 
 from models.PyG_train import train_eval
 from models.metrics import plot_metrics_convergence
-# configurations
-# K_FOLD_OUTER, K_FOLD_INNER
-# dsets
-# BATCH_SIZE_MAX
-# PYTORCH_SEED
-# model
-# metrics_history_path
+
+try:
+    # Check if running in a Jupyter notebook, the funtion get_ipython() is only available in Jupyter
+    get_ipython = get_ipython()
+    if 'IPKernelApp' in get_ipython.config:
+        from tqdm.notebook import tqdm
+    else:
+        from tqdm import tqdm
+except NameError:
+    # Not in a Jupyter notebook, fallback to standard tqdm
+    from tqdm import tqdm
 
 SCHEDULER_DECAY = 0.95
 DROP_LAST_TRAINING = True # .. we can drop the last to have stable gradients and possibly NAN loss function due to lack of positives
+LOG_EPOCH_FREQUENCY = 10
+EARLY_STOPPING_LOSS_EVAL = 20
+EARLY_STOPPING_ROC_EVAL = 10
 
 def nested_cross_validation(model: torch.nn.Module,
                             dsets: dict,
@@ -34,7 +41,6 @@ def nested_cross_validation(model: torch.nn.Module,
                             NUM_EPOCHS: int,
                             SCALE_LOSS_CLASS_SIZE: Union[None, str],
                             SCALE_LOSS_TASK_SIZE: Union[None, str],
-                            LOG_EPOCH_FREQUENCY: int,
                             device: torch.device,
                             metrics_history_path: Path) -> None:
     '''
@@ -46,7 +52,6 @@ def nested_cross_validation(model: torch.nn.Module,
     :param PYTORCH_SEED: seed for PyTorch
     :param BATCH_SIZE_MAX: maximum batch size
     :param NUM_EPOCHS: number of epochs
-    :param LOG_EPOCH_FREQUENCY: frequency to log the epoch
     :param device: device to use for the training
     :param metrics_history_path: path to store the metrics history
     '''
@@ -68,19 +73,19 @@ def nested_cross_validation(model: torch.nn.Module,
 
     # .. delete left over metrics
     (metrics_history_path / 'metrics_history.tsv').unlink(missing_ok=True)
-    # .. move dsets to device
-    for task in dsets:
-        if dsets[task]['dset'].x.device != device:
-            dsets[task]['dset'].to(device)
+    # # .. move dsets to device
+    # for task in dsets:
+    #     if dsets[task]['dset'].x.device != device:
+    #         dsets[task]['dset'].to(device)
     # ..initiate the outer loop of the nested cross validation
-    for i_outer in range(K_FOLD_OUTER):
+    for i_outer in tqdm(range(K_FOLD_OUTER), desc='outer loop', total=K_FOLD_OUTER):
         log.info(f'Initiating outer iteration {i_outer}')
 
         if len(configurations) == 1:
             best_configuration_ID = 0
         else:
             # loop over the model configurations
-            for i_configuration, configuration in enumerate(configurations, 0):
+            for i_configuration, configuration in tqdm(enumerate(configurations, 0), desc='configuration loop', total=len(configurations)):
                 configuration_ID = configuration['configuration_ID']
                 log.info(
                     f'Trialing model/optimiser configuration {configuration_ID} ({i_configuration + 1} out of {len(configurations)})')
@@ -91,7 +96,7 @@ def nested_cross_validation(model: torch.nn.Module,
 
                 # inner loop of the nested cross-validation
                 metrics_history_configuration = []
-                for i_inner in range(K_FOLD_INNER):
+                for i_inner in tqdm(range(K_FOLD_INNER), desc='inner loop', total=K_FOLD_INNER):
                     log.info(f'Initiating inner iteration {i_inner}')
                     # .. create the train and eval set loaders
                     train_loaders, eval_loaders = [], []
@@ -127,10 +132,9 @@ def nested_cross_validation(model: torch.nn.Module,
                     # if specified, scale the loss so that each class contributes according to its size or equally
                     # default reduction is mean
                     if SCALE_LOSS_CLASS_SIZE is None:
-                        global_loss_fn = torch.nn.CrossEntropyLoss(weight=torch.tensor([1., 1.]))
+                        global_loss_fn = torch.nn.CrossEntropyLoss(weight=torch.tensor([1., 1.]).to(device))
                     elif SCALE_LOSS_CLASS_SIZE == 'equal class (global)':
-                        global_loss_fn = torch.nn.CrossEntropyLoss(
-                            weight=torch.tensor([fraction_positives, 1. - fraction_positives]))
+                        global_loss_fn = torch.nn.CrossEntropyLoss(weight=torch.tensor([fraction_positives, 1. - fraction_positives]).to(device))
                     elif SCALE_LOSS_CLASS_SIZE == 'equal class (task)':
                         # in this case we define a separate loss function per task in the train_eval function
                         global_loss_fn = None
@@ -149,9 +153,10 @@ def nested_cross_validation(model: torch.nn.Module,
                     outp.mkdir(parents=True, exist_ok=True)
                     metrics_history, model_summary = train_eval(net, train_loaders, eval_loaders, global_loss_fn,
                                                                 optimizer, scheduler, NUM_EPOCHS,
-                                                                outp / 'model_weights_diff_quantiles.tsv',
-                                                                log_epoch_frequency=LOG_EPOCH_FREQUENCY,
-                                                                scale_loss_task_size=SCALE_LOSS_TASK_SIZE)
+                                                                weight_converge_path = None,
+                                                                early_stopping = {'loss_eval': EARLY_STOPPING_LOSS_EVAL, 'roc_eval': EARLY_STOPPING_ROC_EVAL},
+                                                                log_epoch_frequency = LOG_EPOCH_FREQUENCY,
+                                                                scale_loss_task_size = SCALE_LOSS_TASK_SIZE)
 
                     # store the model summary
                     with open(outp / 'model_summary.txt', mode='wt', encoding='utf-8') as f:
@@ -238,10 +243,9 @@ def nested_cross_validation(model: torch.nn.Module,
         # if specified, scale the loss so that each class contributes according to its size or equally
         # default reduction is mean
         if SCALE_LOSS_CLASS_SIZE is None:
-            global_loss_fn = torch.nn.CrossEntropyLoss(weight=torch.tensor([1., 1.]))
+            global_loss_fn = torch.nn.CrossEntropyLoss(weight=torch.tensor([1., 1.]).to(device))
         elif SCALE_LOSS_CLASS_SIZE == 'equal class (global)':
-            global_loss_fn = torch.nn.CrossEntropyLoss(
-                weight=torch.tensor([fraction_positives, 1. - fraction_positives]))
+            global_loss_fn = torch.nn.CrossEntropyLoss(weight=torch.tensor([fraction_positives, 1. - fraction_positives]).to(device))
         elif SCALE_LOSS_CLASS_SIZE == 'equal class (task)':
             # in this case we define a separate loss function per task in the train_eval function
             global_loss_fn = None
@@ -259,9 +263,11 @@ def nested_cross_validation(model: torch.nn.Module,
         outp = metrics_history_path / f'outer_fold_{i_outer}_configuration_ID_{configuration_ID}'
         outp.mkdir(parents=True, exist_ok=True)
         metrics_history, model_summary = train_eval(net, train_eval_loaders, test_loaders, global_loss_fn, optimizer,
-                                                    scheduler, 2 * NUM_EPOCHS, outp=outp / 'model_weights_diff_quantiles.tsv',
-                                                    log_epoch_frequency=LOG_EPOCH_FREQUENCY,
-                                                    scale_loss_task_size=SCALE_LOSS_TASK_SIZE)
+                                                    scheduler, 2 * NUM_EPOCHS,
+                                                    weight_converge_path = outp / 'model_weights_diff_quantiles.tsv',
+                                                    early_stopping = {'loss_eval': EARLY_STOPPING_LOSS_EVAL, 'roc_eval': EARLY_STOPPING_ROC_EVAL},
+                                                    log_epoch_frequency = LOG_EPOCH_FREQUENCY,
+                                                    scale_loss_task_size = SCALE_LOSS_TASK_SIZE)
 
         # store the model summary
         with open(outp / 'model_summary.txt', mode='wt', encoding='utf-8') as f:

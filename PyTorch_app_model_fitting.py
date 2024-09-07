@@ -101,7 +101,7 @@ K_FOLD_OUTER = 10 # number of folds for the outer cross-validation
 NUM_EPOCHS = 80 # number of epochs
 HANDLE_AMBIGUOUS = 'ignore' # how to handle ambiguous outcomes, can be 'keep', 'set_positive', 'set_negative' or 'ignore', but the model fitting does not support 'keep'
 MODEL_NAME = 'FFNN'
-LOG_EPOCH_FREQUENCY = 10 # frequency to log the metrics during training
+
 SCALE_LOSS_TASK_SIZE = None # how to scale the loss function, can be 'equal task' or None
 SCALE_LOSS_CLASS_SIZE = 'equal class (task)' # how to scale the loss function, can be 'equal class (task)', 'equal class (global)' or None
 
@@ -274,7 +274,6 @@ nested_cross_validation(model,
                         NUM_EPOCHS,
                         SCALE_LOSS_CLASS_SIZE,
                         SCALE_LOSS_TASK_SIZE,
-                        LOG_EPOCH_FREQUENCY,
                         device,
                         metrics_history_path)
 

@@ -3,7 +3,6 @@ log = logger.get_logger(__name__)
 
 from collections import Counter
 import pandas as pd
-from tqdm import tqdm
 import json
 
 from cheminformatics.rdkit_toolkit import get_node_features, get_edge_features, get_adjacency_info
@@ -13,6 +12,16 @@ import torch
 from torch_geometric.data import InMemoryDataset
 from torch_geometric.data import Data
 
+try:
+    # Check if running in a Jupyter notebook, the funtion get_ipython() is only available in Jupyter
+    get_ipython = get_ipython()
+    if 'IPKernelApp' in get_ipython.config:
+        from tqdm.notebook import tqdm
+    else:
+        from tqdm import tqdm
+except NameError:
+    # Not in a Jupyter notebook, fallback to standard tqdm
+    from tqdm import tqdm
 
 class PyG_Dataset(InMemoryDataset):
     '''
@@ -128,7 +137,7 @@ class PyG_Dataset(InMemoryDataset):
 
         # Read data into Data list
         data_list = []
-        for i_mol in range(len(mols)):
+        for i_mol in tqdm(range(len(mols)), desc='processing molecules', total=len(mols)):
 
             # adjacency information
             edge_index = torch.tensor(adjacency_info[i_mol].to_numpy()).to(torch.long)

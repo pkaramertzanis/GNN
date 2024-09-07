@@ -1,7 +1,4 @@
 # setup logging
-import glob
-import random
-
 import logger
 log = logger.setup_applevel_logger(file_name ='logs/GNN_muta_model.log')
 
@@ -12,28 +9,12 @@ import pandas as pd
 from pathlib import Path
 import numpy as np
 import torch
-from torch.optim.lr_scheduler import LambdaLR
 
-from torch_geometric.loader import DataLoader
 from models.PyG_Dataset import PyG_Dataset
-
-
-from torch.utils.data import random_split
-from torch_geometric.nn import summary
-
-from sklearn.model_selection import train_test_split
-
-# import matplotlib
-# matplotlib.use('TkAgg')
-import matplotlib.pyplot as plt
 
 from collections import Counter
 from itertools import product
 import random
-import math
-from datetime import datetime
-import re
-import json
 
 from sklearn.model_selection import StratifiedKFold
 
@@ -43,9 +24,8 @@ from models.MPNN_GNN.MPNN_GNN import MPNN_GNN
 from models.AttentiveFP_GNN.AttentiveFP_GNN import AttentiveFP_GNN
 from models.GAT_GNN.GAT_GNN import GAT_GNN
 
-from models.metrics import (plot_metrics_convergence, consolidate_metrics_outer,
+from models.metrics import (consolidate_metrics_outer,
                             plot_metrics_convergence_outer_average, plot_roc_curve_outer_average)
-from models.PyG_train import train_eval
 from models.PyG_nested_cross_validation import nested_cross_validation
 
 from visualisations.task_concordance import visualise_task_concordance
@@ -61,14 +41,14 @@ flat_datasets = [
                 r'data/REACH/tabular/REACH_genotoxicity.xlsx',
 ]
 task_specifications = [
-    {'filters': {'assay': ['bacterial reverse mutation assay'], 'cell line/species': ['Escherichia coli (WP2 Uvr A)',
-                                                                                      'Salmonella typhimurium (TA 102)',
+    {'filters': {'assay': ['bacterial reverse mutation assay'], 'cell line/species': [#'Escherichia coli (WP2 Uvr A)',
+                                                                                      #'Salmonella typhimurium (TA 102)',
                                                                                       'Salmonella typhimurium (TA 100)',
-                                                                                      'Salmonella typhimurium (TA 1535)',
+                                                                                      #'Salmonella typhimurium (TA 1535)',
                                                                                       'Salmonella typhimurium (TA 98)',
-                                                                                      'Salmonella typhimurium (TA 1537)'
+                                                                                      #'Salmonella typhimurium (TA 1537)'
                                                                                       ], 'metabolic activation': ['yes', 'no']},
-     'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay',]}, #'cell line/species', 'metabolic activation']},
+     'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay', 'cell line/species', 'metabolic activation']},
 
     {'filters': {'assay': ['in vitro mammalian cell micronucleus test']},
      'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
@@ -90,8 +70,17 @@ task_specifications = [
 #     {'filters': {'assay': ['bacterial reverse mutation assay'], },
 #      'task aggregation columns': ['in vitro/in vivo', 'endpoint']},
 # ]
-# record_selection = {'cell line/species': ['Salmonella typhimurium (TA 100)']}
-# record_selection = None
+# task_specifications = [
+#     {'filters': {'assay': ['bacterial reverse mutation assay'], 'cell line/species': [#'Escherichia coli (WP2 Uvr A)',
+#                                                                                       #'Salmonella typhimurium (TA 102)',
+#                                                                                       'Salmonella typhimurium (TA 100)',
+#                                                                                       #'Salmonella typhimurium (TA 1535)',
+#                                                                                       'Salmonella typhimurium (TA 98)',
+#                                                                                       #'Salmonella typhimurium (TA 1537)'
+#                                                                                       ], 'metabolic activation': ['yes', 'no']},
+#      'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay', 'cell line/species']},
+#
+# ]
 outp_sdf = Path(r'data/combined/sdf/genotoxicity_dataset.sdf')
 outp_tab = Path(r'data/combined/tabular/genotoxicity_dataset.xlsx')
 tasks = create_sdf(flat_datasets = flat_datasets,
@@ -104,18 +93,16 @@ MINIMUM_TASK_DATASET = 512 # minimum number of data points for a task
 BATCH_SIZE_MAX = 512 # maximum batch size (largest task, the smaller tasks are scaled accordingly so the number of batches is the same)
 K_FOLD_INNER = 5 # number of folds for the inner cross-validation
 K_FOLD_OUTER = 10 # number of folds for the outer cross-validation
-NUM_EPOCHS = 80 # number of epochs
-MODEL_NAME = 'GAT_GNN' # name of the model, can be 'MPNN_GNN', 'AttentiveFP_GNN' or 'GAT_GNN'
+NUM_EPOCHS = 500 # number of epochs
+MODEL_NAME = 'AttentiveFP_GNN' # name of the model, can be 'MPNN_GNN', 'AttentiveFP_GNN' or 'GAT_GNN'
 SCALE_LOSS_TASK_SIZE = None # how to scale the loss function, can be 'equal task' or None
 SCALE_LOSS_CLASS_SIZE = 'equal class (task)' # how to scale the loss function, can be 'equal class (task)', 'equal class (global)' or None
 
 HANDLE_AMBIGUOUS = 'ignore' # how to handle ambiguous outcomes, can be 'keep', 'set_positive', 'set_negative' or 'ignore', but the model fitting does not support 'keep'
-LOG_EPOCH_FREQUENCY = 10 # frequency to log the metrics during training
-
 
 
 # location to store the metrics logs
-metrics_history_path = Path(rf'D:\myApplications\local\2024_01_21_GCN_Muta\output\iteration97')/MODEL_NAME
+metrics_history_path = Path(rf'D:\myApplications\local\2024_01_21_GCN_Muta\output\iteration99')/MODEL_NAME
 metrics_history_path.mkdir(parents=True, exist_ok=True)
 
 
@@ -144,7 +131,7 @@ if MODEL_NAME == 'MPNN_GNN':
                         }
 elif MODEL_NAME == 'AttentiveFP_GNN':
     model = AttentiveFP_GNN
-    model_parameters = {'hidden_channels': [256], # [64, 128, 256]
+    model_parameters = {'hidden_channels': [100, 150], # [64, 128, 256]
                         'num_layers': [2], # [1, 2, 3, 4]
                         'num_timesteps': [2], # [1, 2, 3, 4]
                         'dropout': [0.0], # [0.5, 0.6, 0.7, 0.8]
@@ -179,7 +166,9 @@ for i_task, task in enumerate(tasks):
                        ambiguous_outcomes=HANDLE_AMBIGUOUS,
                        force_reload=True,
                        )
-    # dset.to(device) # all datasets are moved to the device
+    # move the dataset to device immediately after creation
+    if dset.x.device != device:
+        dset.to(device)
     # store the dataset in the dset dictionary
     entry['dset'] = dset
     if len(dset) >= MINIMUM_TASK_DATASET:
@@ -260,7 +249,6 @@ nested_cross_validation(model,
                         NUM_EPOCHS,
                         SCALE_LOSS_CLASS_SIZE,
                         SCALE_LOSS_TASK_SIZE,
-                        LOG_EPOCH_FREQUENCY,
                         device,
                         metrics_history_path)
 
