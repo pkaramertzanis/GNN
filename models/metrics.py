@@ -182,8 +182,10 @@ def consolidate_metrics_outer(metrics_history_path: Path, metrics_outer_path: Pa
     metrics_history = pd.read_csv(metrics_history_path, sep='\t')
     with pd.ExcelWriter(metrics_outer_path, engine='xlsxwriter') as writer:
         # over all
-        # keep only the last three epochs (or averaging)
-        msk1 = metrics_history['epoch'] >= metrics_history['epoch'].max() - 3
+        # keep only the last three epochs (for averaging)
+        outer_max_epochs = metrics_history.groupby(['outer fold', 'inner fold'], dropna=False)['epoch'].max().reset_index().query('`inner fold`.isnull()')[['outer fold', 'epoch']].rename({'epoch': 'max epoch outer'}, axis='columns')
+        msk1 = metrics_history.merge(outer_max_epochs, on='outer fold').eval('epoch >= `max epoch outer` - 3')
+        # msk1 = metrics_history['epoch'] >= metrics_history['epoch'].max() - 3
         # keep only the test and train+eval stages
         msk2 = metrics_history['stage'].isin(['test', 'train+eval'])
         # keep aggregates at epoch level
@@ -210,7 +212,8 @@ def consolidate_metrics_outer(metrics_history_path: Path, metrics_outer_path: Pa
         res.to_excel(writer, sheet_name='overall', index=True)
         # per task
         # keep only the last three epochs (or averaging)
-        msk1 = metrics_history['epoch'] >= metrics_history['epoch'].max() - 3
+        msk1 = metrics_history.merge(outer_max_epochs, on='outer fold').eval('epoch >= `max epoch outer` - 3')
+        # msk1 = metrics_history['epoch'] >= metrics_history['epoch'].max() - 3
         # keep only the test and train+eval stages
         msk2 = metrics_history['stage'].isin(['test', 'train+eval'])
         # keep aggregates at epoch level

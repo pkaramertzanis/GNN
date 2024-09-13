@@ -59,12 +59,12 @@ flat_datasets = [
                 r'data/QSARToolbox/tabular/QSARToolbox_genotoxicity.xlsx'
                 ]
 task_specifications = [
-    {'filters': {'assay': ['bacterial reverse mutation assay'], 'cell line/species': ['Escherichia coli (WP2 Uvr A)',
-                                                                                      'Salmonella typhimurium (TA 102)',
+    {'filters': {'assay': ['bacterial reverse mutation assay'], 'cell line/species': [#'Escherichia coli (WP2 Uvr A)',
+                                                                                      #'Salmonella typhimurium (TA 102)',
                                                                                       'Salmonella typhimurium (TA 100)',
-                                                                                      'Salmonella typhimurium (TA 1535)',
+                                                                                      #'Salmonella typhimurium (TA 1535)',
                                                                                       'Salmonella typhimurium (TA 98)',
-                                                                                      'Salmonella typhimurium (TA 1537)'
+                                                                                      #'Salmonella typhimurium (TA 1537)'
                                                                                       ], 'metabolic activation': ['yes', 'no']},
      'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay', 'cell line/species', 'metabolic activation']},
 
@@ -83,6 +83,10 @@ task_specifications = [
     {'filters': {'endpoint': ['in vitro gene mutation study in mammalian cells']},
      'task aggregation columns': ['in vitro/in vivo', 'endpoint']},
 
+]
+task_specifications = [
+    {'filters': {'assay': ['bacterial reverse mutation assay'], },
+     'task aggregation columns': ['in vitro/in vivo', 'endpoint']},
 ]
 outp_sdf = Path(r'data/combined/sdf/genotoxicity_dataset.sdf')
 outp_tab = Path(r'data/combined/tabular/genotoxicity_dataset.xlsx')
@@ -106,19 +110,19 @@ SCALE_LOSS_TASK_SIZE = None # how to scale the loss function, can be 'equal task
 SCALE_LOSS_CLASS_SIZE = 'equal class (task)' # how to scale the loss function, can be 'equal class (task)', 'equal class (global)' or None
 
 # location to store the metrics logs
-metrics_history_path = Path(rf'D:\myApplications\local\2024_01_21_GCN_Muta\output\iteration96')/MODEL_NAME
+metrics_history_path = Path(rf'D:\myApplications\local\2024_01_21_GCN_Muta\output\iteration103')/MODEL_NAME
 metrics_history_path.mkdir(parents=True, exist_ok=True)
 
 fingerprint_parameters = {'radius': 2,
-                          'fpSize': 2048,
+                          'fpSize': 1024,
                           'type': 'binary' # 'binary', 'count'
                           }
 
-model_parameters = {'hidden_layers': [[512, 512], [256, 256]],  # [64, 128, 256]
-                    'dropout': [0.5, 0.6],  # [0.5, 0.6, 0.7, 0.8],
+model_parameters = {'hidden_layers': [[256, 256]],  # [64, 128, 256]
+                    'dropout': [0.6, 0.7],  # [0.5, 0.6, 0.7, 0.8],
                     'activation_function': [torch.nn.functional.leaky_relu],
                     'learning_rate': [0.005],  # [0.001, 0.005, 0.01]
-                    'weight_decay': [2.e-3],  # [1.e-5, 1e-4, 1e-3]
+                    'weight_decay': [1.e-3, 5.e-5],  # [1.e-5, 1e-4, 1e-3]
                     }
 
 
@@ -140,9 +144,9 @@ for i_mol, mol in tqdm(enumerate(mols)):
         fg = fpgen.GetFingerprint(mol)
         fg_count = fpgen.GetCountFingerprint(mol)
         if fingerprint_parameters['type'] == 'binary':
-            tox_data['fingerprint'] = fg.ToBitString()
+            tox_data['fingerprint'] = ''.join([str(bit) for bit in fg.ToList()]) #fg.ToBitString()
         elif fingerprint_parameters['type'] == 'count':
-            tox_data['fingerprint'] = ''.join([str(bit) for bit in fg_count.ToList()])
+            tox_data['fingerprint'] = ''.join([str(min(bit, 9)) for bit in fg_count.ToList()])
         else:
             ex = ValueError(f"unknown fingerprint type: {fingerprint_parameters}")
             log.error(ex)

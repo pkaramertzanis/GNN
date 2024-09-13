@@ -45,16 +45,16 @@ task_specifications = [
                                                                                       #'Salmonella typhimurium (TA 102)',
                                                                                       'Salmonella typhimurium (TA 100)',
                                                                                       #'Salmonella typhimurium (TA 1535)',
-                                                                                      'Salmonella typhimurium (TA 98)',
+                                                                                      # 'Salmonella typhimurium (TA 98)',
                                                                                       #'Salmonella typhimurium (TA 1537)'
-                                                                                      ], 'metabolic activation': ['yes', 'no']},
+                                                                                      ], 'metabolic activation': ['yes']},
      'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay', 'cell line/species', 'metabolic activation']},
 
-    {'filters': {'assay': ['in vitro mammalian cell micronucleus test']},
-     'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
-
-    {'filters': {'assay': ['in vitro mammalian chromosome aberration test']},
-     'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
+    # {'filters': {'assay': ['in vitro mammalian cell micronucleus test']},
+    #  'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
+    #
+    # {'filters': {'assay': ['in vitro mammalian chromosome aberration test']},
+    #  'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
 
     # {'filters': {'assay': ['in vitro mammalian cell gene mutation test using the Hprt and xprt genes']},
     #  'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
@@ -62,8 +62,8 @@ task_specifications = [
     # {'filters': {'assay': ['in vitro mammalian cell gene mutation test using the thymidine kinase gene']},
     #  'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
 
-    {'filters': {'endpoint': ['in vitro gene mutation study in mammalian cells']},
-     'task aggregation columns': ['in vitro/in vivo', 'endpoint']},
+    # {'filters': {'endpoint': ['in vitro gene mutation study in mammalian cells']},
+    #  'task aggregation columns': ['in vitro/in vivo', 'endpoint']},
 
 ]
 # task_specifications = [
@@ -102,7 +102,7 @@ HANDLE_AMBIGUOUS = 'ignore' # how to handle ambiguous outcomes, can be 'keep', '
 
 
 # location to store the metrics logs
-metrics_history_path = Path(rf'D:\myApplications\local\2024_01_21_GCN_Muta\output\iteration99')/MODEL_NAME
+metrics_history_path = Path(rf'D:\myApplications\local\2024_01_21_GCN_Muta\output\iteration104')/MODEL_NAME
 metrics_history_path.mkdir(parents=True, exist_ok=True)
 
 
@@ -126,17 +126,17 @@ if MODEL_NAME == 'MPNN_GNN':
                         'n_lin_hidden': [64], # [32, 64, 128, 256, 512]
                         'dropout': [0.6], # [0.5, 0.6, 0.7, 0.8]
                         'activation_function': [torch.nn.functional.leaky_relu],
-                        'learning_rate': [0.005],  # [0.001, 0.005, 0.01]
+                        'learning_rate': [1.e-3],  # [0.001, 0.005, 0.01]
                         'weight_decay': [1.e-3],  # [1.e-5, 1e-4, 1e-3]
                         }
 elif MODEL_NAME == 'AttentiveFP_GNN':
     model = AttentiveFP_GNN
-    model_parameters = {'hidden_channels': [100, 150], # [64, 128, 256]
-                        'num_layers': [2], # [1, 2, 3, 4]
-                        'num_timesteps': [2], # [1, 2, 3, 4]
-                        'dropout': [0.0], # [0.5, 0.6, 0.7, 0.8]
-                        'learning_rate': [0.005], # [0.001, 0.005, 0.01]
-                        'weight_decay': [5.e-4],  # [1.e-5, 1e-4, 1.e-3]
+    model_parameters = {'hidden_channels': [200], # [64, 128, 256]
+                        'num_layers': [3], # [1, 2, 3, 4]
+                        'num_timesteps': [3], # [1, 2, 3, 4]
+                        'dropout': [0.5], # [0.5, 0.6, 0.7, 0.8]
+                        'learning_rate': [10**(-3)], # [0.001, 0.005, 0.01]
+                        'weight_decay': [10**(-3.5)],  # [1.e-5, 1e-4, 1.e-3]
                         }
 elif MODEL_NAME == 'GAT_GNN':
     model = GAT_GNN
@@ -237,6 +237,31 @@ random.seed(PYTORCH_SEED)
 random.shuffle(configurations)
 # .. output the configurations
 pd.DataFrame(configurations).to_excel(metrics_history_path/'configurations.xlsx', index=False)
+
+
+# # --------------------------------------
+# # export the dataset for the first outer iteration to build a model with deep chem
+# msk = (splits['outer fold']==0) & (splits['inner fold']==0)
+# train_indices = splits.loc[msk, 'train indices'].iloc[0]
+# eval_indices = splits.loc[msk, 'eval indices'].iloc[0]
+# test_indices = splits.loc[msk, 'test indices'].iloc[0]
+# molecule_ids = dsets['in vitro, in vitro gene mutation study in bacteria']['dset'].data.molecule_id
+# genotox_data = pd.read_excel('data/combined/tabular/genotoxicity_dataset.xlsx')
+# # .. training/eval set
+# molecule_ids_train_eval = [molecule_ids[i] for i in np.concatenate([train_indices, eval_indices])]
+# msk = genotox_data['source record ID'].isin(molecule_ids_train_eval)
+# train_eval_smiles = genotox_data.loc[msk, 'smiles_std']
+# train_eval_y = [1 if gentox=='positive' else 0 for gentox in genotox_data.loc[msk, 'genotoxicity'].to_list()]
+# # .. training/eval set
+# molecule_ids_test = [molecule_ids[i] for i in test_indices]
+# msk = genotox_data['source record ID'].isin(molecule_ids_test)
+# test_smiles = genotox_data.loc[msk, 'smiles_std']
+# test_y = [1 if gentox=='positive' else 0 for gentox in genotox_data.loc[msk, 'genotoxicity'].to_list()]
+# # store train_eval_smiles, train_eval_y, test_smiles, test_y in a pickle
+# import pickle
+# with open('junk/deepchem_data.pickle', 'wb') as f:
+#     pickle.dump((train_eval_smiles, train_eval_y, test_smiles, test_y), f)
+# # --------------------------------------
 
 
 # nested cross-validation

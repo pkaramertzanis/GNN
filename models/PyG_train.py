@@ -340,7 +340,7 @@ def train_eval(net,
                 tmp = early_stopping_loss_roc.assign(**{'loss (mean) minimum': None, 'roc auc (maximum)': None})
                 tmp.loc[tmp['loss (mean)'].idxmin(), 'loss (mean) minimum'] = '<- min loss (mean)'
                 tmp.loc[tmp['roc auc'].idxmax(), 'roc auc (maximum)'] = '<- max roc auc'
-                log.info('early stopping based on the loss and roc auc of the evaluation/test set\n' + tmp.to_markdown())
+                log.info('early stopping history based on the loss and roc auc of the evaluation/test set\n' + tmp.to_markdown())
                 if early_stopping_loss_roc['loss (mean)'].values.argmin() < len(early_stopping_loss_roc) - early_stopping['loss_eval'] and \
                    early_stopping_loss_roc['roc auc'].values.argmax() < len(early_stopping_loss_roc) - early_stopping['roc_eval']:
                        log.info(f'early stopping at epoch {i_epoch}, evaluation loss did not improve for {early_stopping["loss_eval"]} epochs and ROC AUC did not improve for {early_stopping["roc_eval"]} epochs')
