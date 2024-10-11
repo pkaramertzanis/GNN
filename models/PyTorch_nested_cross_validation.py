@@ -19,7 +19,7 @@ from models.PyTorch_train import train_eval
 from models.metrics import plot_metrics_convergence
 
 try:
-    # Check if running in a Jupyter notebook, the funtion get_ipython() is only available in Jupyter
+    # Check if running in a Jupyter notebook, the function get_ipython() is only available in Jupyter
     get_ipython = get_ipython()
     if 'IPKernelApp' in get_ipython.config:
         from tqdm.notebook import tqdm
@@ -29,7 +29,7 @@ except NameError:
     # Not in a Jupyter notebook, fallback to standard tqdm
     from tqdm import tqdm
 
-SCHEDULER_DECAY = 0.95
+SCHEDULER_DECAY = 0.97
 DROP_LAST_TRAINING = True # .. we can drop the last to have stable gradients and possibly NAN loss function due to lack of positives
 LOG_EPOCH_FREQUENCY = 10
 EARLY_STOPPING_LOSS_EVAL = 20

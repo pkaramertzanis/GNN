@@ -11,15 +11,15 @@ class FFNNModel(torch.nn.Module):
                  n_input: int,
                  hidden_layers: list[int],
                  dropout: float,
-                 activation_function: Callable,
-                 n_classes: [int]):
+                 n_classes: [int],
+                 activation_function: Callable = torch.nn.functional.leaky_relu):
         '''
         Implements a simple feedforward neural network in PyTorch
         :param n_input: number of input features (fingerprint length)
         :param hidden_layers: array with the number of neurons in each hidden layer
         :param dropout: dropout rate
-        :param activation_function: PyTorch activation function, e.g. torch.nn.functional.relu or torch.nn.functional.leaky_relu
         :param n_classes: number of output classes
+        :param activation_function: PyTorch activation function, e.g. torch.nn.functional.relu or torch.nn.functional.leaky_relu
         '''
         super().__init__()
 
@@ -44,12 +44,12 @@ class FFNNModel(torch.nn.Module):
         # dropout layer
         self.dropout = torch.nn.Dropout(dropout)
 
-        # initialise the weights and biases
-        for name, param in self.named_parameters():
-            if 'weight' in name:
-                torch.nn.init.xavier_uniform_(param)
-            if 'bias' in name:
-                torch.nn.init.constant_(param, 0.)
+        # # initialise the weights and biases
+        # for name, param in self.named_parameters():
+        #     if 'weight' in name:
+        #         torch.nn.init.xavier_uniform_(param)
+        #     if 'bias' in name:
+        #         torch.nn.init.constant_(param, 0.)
 
 
     def forward(self, x: torch.Tensor, task_id: int):

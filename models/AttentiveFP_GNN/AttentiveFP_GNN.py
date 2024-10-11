@@ -192,7 +192,7 @@ class AttentiveFP_GNN(torch.nn.Module):
         return (f'{self.__class__.__name__}('
                 f'in_channels={self.in_channels}, '
                 f'hidden_channels={self.hidden_channels}, '
-                f'out_channels={self.out_channels}, '
+                f'n_classes={self.n_classes}, '
                 f'edge_dim={self.edge_dim}, '
                 f'num_layers={self.num_layers}, '
                 f'num_timesteps={self.num_timesteps}'

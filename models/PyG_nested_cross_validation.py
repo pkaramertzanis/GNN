@@ -26,7 +26,7 @@ except NameError:
     # Not in a Jupyter notebook, fallback to standard tqdm
     from tqdm import tqdm
 
-SCHEDULER_DECAY = 0.95
+SCHEDULER_DECAY = 0.97
 DROP_LAST_TRAINING = True # .. we can drop the last to have stable gradients and possibly NAN loss function due to lack of positives
 LOG_EPOCH_FREQUENCY = 10
 EARLY_STOPPING_LOSS_EVAL = 20

@@ -60,7 +60,7 @@ def plot_metrics_convergence(metrics_history: dict,
     :param stages: list with stages to plot, can be either ['train', 'eval'] for inner cross validation fits or
                    ['train+eval', 'test'] for outer cross validation fits
     :param output: output file path
-    :param metrics: list with metrics to plot, if None then recall, specificity, and balanced accuracy and f1 score will be plotted
+    :param metrics: list with metrics to plot, if None then recall, specificity, and balanced accuracy, f1 score and roc auc will be plotted
     :param drop_first_epoch: drop the first epoch from the plot
     :return:
     """
@@ -69,7 +69,7 @@ def plot_metrics_convergence(metrics_history: dict,
     df = metrics_history.copy()
 
     if metrics is None:
-        metrics = ['recall', 'specificity', 'balanced accuracy', 'f1 score']
+        metrics = ['recall', 'specificity', 'balanced accuracy', 'f1 score', 'roc auc']
 
     if stages != ['train', 'eval'] and stages != ['train+eval', 'test']:
         ex = ValueError(f"stages must be either ['train', 'eval'] or ['train+eval', 'test']")

@@ -33,7 +33,7 @@ def train_eval(net,
                scheduler: torch.optim.lr_scheduler.LRScheduler,
                num_epochs: int,
                weight_converge_path: Union[Path, None],
-               early_stopping: Union[dict, None] = {'loss_eval': 20, 'roc_eval': 10},
+               early_stopping: Union[dict, None] = {'loss_eval': 20, 'roc_eval': 10, 'threshold': 0.},
                log_epoch_frequency: int = 10,
                scale_loss_task_size: Union[None, str] = None,
                metrics_history = None) -> list[dict]:
@@ -55,8 +55,8 @@ def train_eval(net,
     :param weight_converge_path: Path to store the model weights every log_epoch_frequency epochs, if None model weights are not stored
     :param num_epochs: maximum number of epochs to train the model
     :param early_stopping: dictionary with the early stopping criteria, if None early stopping is not applied. For example,
-                           {'loss_eval': 20, 'roc_eval': 10} means stop training if the loss on the eval set does not
-                           improve for 20 epochs or the ROC AUC on the eval set does not improve for 10 epochs
+                           {'loss_eval': 20, 'roc_eval': 10, 'threshold': 0.} means stop training if the loss on the eval set does not
+                           improve for 20 epochs or the ROC AUC on the eval set does not improve for 10 epochs; threshold defines how large the improvement should be
     :param log_epoch_frequency: log the metrics every so many epochs, if early stopping is set then logging is done in
                                 every epoch. The last 3 epochs are always reported
     :param scale_loss_task_size: if None then each task contributes to the loss function according to the number of datapoints in each task,
@@ -67,6 +67,7 @@ def train_eval(net,
     Note: Early stopping has not been implemented. For an easy implementation in PyTorch see
           https://medium.com/@vrunda.bhattbhatt/a-step-by-step-guide-to-early-stopping-in-tensorflow-and-pytorch-59c1e3d0e376
     """
+
     # metrics history, continue from the previous run if not None
     if metrics_history is None:
         metrics_history = []
@@ -337,14 +338,24 @@ def train_eval(net,
 
             # apply early stopping
             if early_stopping is not None:
-                tmp = early_stopping_loss_roc.assign(**{'loss (mean) minimum': None, 'roc auc (maximum)': None})
+                tmp = early_stopping_loss_roc.assign(**{'loss (mean) minimum': None, 'roc auc (maximum)': None}).set_index('epoch')
                 tmp.loc[tmp['loss (mean)'].idxmin(), 'loss (mean) minimum'] = '<- min loss (mean)'
                 tmp.loc[tmp['roc auc'].idxmax(), 'roc auc (maximum)'] = '<- max roc auc'
                 log.info('early stopping history based on the loss and roc auc of the evaluation/test set\n' + tmp.to_markdown())
-                if early_stopping_loss_roc['loss (mean)'].values.argmin() < len(early_stopping_loss_roc) - early_stopping['loss_eval'] and \
-                   early_stopping_loss_roc['roc auc'].values.argmax() < len(early_stopping_loss_roc) - early_stopping['roc_eval']:
-                       log.info(f'early stopping at epoch {i_epoch}, evaluation loss did not improve for {early_stopping["loss_eval"]} epochs and ROC AUC did not improve for {early_stopping["roc_eval"]} epochs')
-                       break
+
+                threshold = early_stopping['threshold']
+                # smallest epoch with the eval loss within (1+threshold)*minimum
+                min_loss_mean_epoch = (early_stopping_loss_roc['loss (mean)'] <= early_stopping_loss_roc['loss (mean)'].min() * (1 + threshold)).idxmax()
+                # smallest epoch with the eval roc auc within (1-threshold)*maximum
+                max_roc_auc_epoch = (early_stopping_loss_roc['roc auc'] >= early_stopping_loss_roc['roc auc'].max() * (1 - threshold)).idxmax()
+                if i_epoch > min_loss_mean_epoch + early_stopping['loss_eval'] and i_epoch > max_roc_auc_epoch + early_stopping['roc_eval']:
+                    log.info(f'early stopping at epoch {i_epoch}, evaluation loss did not significantly improve for {early_stopping["loss_eval"]} epochs and ROC AUC did not significantly improve for {early_stopping["roc_eval"]} epochs')
+                    break
+
+                # if early_stopping_loss_roc['loss (mean)'].values.argmin() < len(early_stopping_loss_roc) - early_stopping['loss_eval'] and \
+                #    early_stopping_loss_roc['roc auc'].values.argmax() < len(early_stopping_loss_roc) - early_stopping['roc_eval']:
+                #        log.info(f'early stopping at epoch {i_epoch}, evaluation loss did not improve for {early_stopping["loss_eval"]} epochs and ROC AUC did not improve for {early_stopping["roc_eval"]} epochs')
+                #        break
 
         # log the metrics
         log.info(pd.DataFrame(metrics_epoch).drop(columns='roc'))

@@ -13,34 +13,30 @@ class GAT_GNN(torch.nn.Module):
                  num_edge_features: int,
                  n_conv: int,
                  n_heads: int,
-                 n_conv_hidden: int,
+                 n_conv_hidden_per_head: int,
                  v2: bool,
                  n_lin: int,
                  n_lin_hidden: int,
                  dropout: float,
-                 activation_function: Callable,
-                 n_classes: [int]):
+                 n_classes: [int],
+                 activation_function: Callable = torch.nn.functional.leaky_relu,
+                 ):
         """
         Implements the GAT multitask classifier in PyTorch Geometric
         :param num_node_features: number of node features
         :param num_edge_features: number of edge features
-
         :param n_conv: number of message passing (convolutional) layers
-        :param n_conv_hidden: number of hidden features in the convolutional layers
+        :param n_conv_hidden_per_head: number of hidden features in the convolutional layers per head, i.e. n_conv_hidden = n_heads * n_conv_hidden_per_head
         :param n_heads: number of multi-head-attentions
         :param v2: if True, use the GATv2 implementation, otherwise use the original GAT implementation
-
-        :param dropout: dropout rate
-        :param activation_function: PyTorch activation function, e.g. torch.nn.functional.relu or torch.nn.functional.leaky_relu
-        :param n_classes: array with the number of output classes in each classification task
-
         :param n_lin: number of linear layers
         :param n_lin_hidden: number of hidden features in the linear layers
-
+        :param dropout: dropout rate
+        :param n_classes: array with the number of output classes in each classification task
+        :param activation_function: PyTorch activation function, e.g. torch.nn.functional.relu or torch.nn.functional.leaky_relu
         See
         https://pytorch-geometric.readthedocs.io/en/latest/generated/torch_geometric.nn.models.GAT.html#torch_geometric.nn.models.GAT (and its base class)
         https://pytorch-geometric.readthedocs.io/en/latest/generated/torch_geometric.nn.conv.GATConv.html#torch_geometric.nn.conv.GATConv
-
         """
         super().__init__()
 
@@ -52,7 +48,8 @@ class GAT_GNN(torch.nn.Module):
         self.n_conv = n_conv
 
         # number of hidden features in the convolutional layers
-        self.n_conv_hidden = n_conv_hidden
+        self.n_conv_hidden_per_head = n_conv_hidden_per_head
+        self.n_conv_hidden = self.n_conv_hidden_per_head * n_heads
 
         # number of heads in the multi-head-attention
         self.n_heads = n_heads
@@ -93,12 +90,15 @@ class GAT_GNN(torch.nn.Module):
         # dropout layer
         self.dropout = torch.nn.Dropout(dropout)
 
-        # initialise the weights and biases
-        for name, param in self.named_parameters():
-            if 'weight' in name:
-                torch.nn.init.xavier_uniform_(param)
-            if 'bias' in name:
-                torch.nn.init.constant_(param, 0.)
+        # initialise the weights and biases of the output layers, the other modules are initialised by the GAT model
+        # for output_layer in self.out_layers:
+        #     torch.nn.init.xavier_uniform_(output_layer.weight)
+        #     torch.nn.init.constant_(output_layer.bias, 0.)
+        # for name, param in self.named_parameters():
+        #     if 'weight' in name:
+        #         torch.nn.init.xavier_uniform_(param)
+        #     if 'bias' in name:
+        #         torch.nn.init.constant_(param, 0.)
 
 
     def forward(self, x: torch.Tensor, edge_index: torch.Tensor, edge_attr: torch.Tensor, batch: torch.Tensor, task_id: int):

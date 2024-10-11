@@ -181,6 +181,7 @@ def create_sdf(flat_datasets: list,
 
     aggregated_datasets = []
     for i_task, task_specification in enumerate(task_specifications):
+
         filters = task_specification['filters']
         task_aggregation_cols = task_specification['task aggregation columns']
         msk = []

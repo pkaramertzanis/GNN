@@ -13,7 +13,7 @@ from torch_geometric.data import InMemoryDataset
 from torch_geometric.data import Data
 
 try:
-    # Check if running in a Jupyter notebook, the funtion get_ipython() is only available in Jupyter
+    # Check if running in a Jupyter notebook, the function get_ipython() is only available in Jupyter
     get_ipython = get_ipython()
     if 'IPKernelApp' in get_ipython.config:
         from tqdm.notebook import tqdm
@@ -103,7 +103,7 @@ class PyG_Dataset(InMemoryDataset):
 
     def process(self):
         '''
-        Processes the raw data from the sdp file to prepare a PyTorch Geometric list of Data objects
+        Processes the raw data from the sdf file to prepare a PyTorch Geometric list of Data objects
         '''
 
         # read the sdf file with the raw data

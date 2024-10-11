@@ -45,9 +45,9 @@ task_specifications = [
                                                                                       #'Salmonella typhimurium (TA 102)',
                                                                                       'Salmonella typhimurium (TA 100)',
                                                                                       #'Salmonella typhimurium (TA 1535)',
-                                                                                      # 'Salmonella typhimurium (TA 98)',
+                                                                                      'Salmonella typhimurium (TA 98)',
                                                                                       #'Salmonella typhimurium (TA 1537)'
-                                                                                      ], 'metabolic activation': ['yes']},
+                                                                                      ], 'metabolic activation': ['yes', 'no']},
      'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay', 'cell line/species', 'metabolic activation']},
 
     # {'filters': {'assay': ['in vitro mammalian cell micronucleus test']},
@@ -66,10 +66,10 @@ task_specifications = [
     #  'task aggregation columns': ['in vitro/in vivo', 'endpoint']},
 
 ]
-# task_specifications = [
-#     {'filters': {'assay': ['bacterial reverse mutation assay'], },
-#      'task aggregation columns': ['in vitro/in vivo', 'endpoint']},
-# ]
+task_specifications = [
+     {'filters': {'assay': ['bacterial reverse mutation assay'], },
+      'task aggregation columns': ['in vitro/in vivo', 'endpoint']},
+]
 # task_specifications = [
 #     {'filters': {'assay': ['bacterial reverse mutation assay'], 'cell line/species': [#'Escherichia coli (WP2 Uvr A)',
 #                                                                                       #'Salmonella typhimurium (TA 102)',
@@ -131,12 +131,12 @@ if MODEL_NAME == 'MPNN_GNN':
                         }
 elif MODEL_NAME == 'AttentiveFP_GNN':
     model = AttentiveFP_GNN
-    model_parameters = {'hidden_channels': [200], # [64, 128, 256]
-                        'num_layers': [3], # [1, 2, 3, 4]
-                        'num_timesteps': [3], # [1, 2, 3, 4]
-                        'dropout': [0.5], # [0.5, 0.6, 0.7, 0.8]
+    model_parameters = {'hidden_channels': [200, 300], # [64, 128, 256]
+                        'num_layers': [5, 6], # [1, 2, 3, 4]
+                        'num_timesteps': [5, 6], # [1, 2, 3, 4]
+                        'dropout': [0.25], # [0.5, 0.6, 0.7, 0.8]
                         'learning_rate': [10**(-3)], # [0.001, 0.005, 0.01]
-                        'weight_decay': [10**(-3.5)],  # [1.e-5, 1e-4, 1.e-3]
+                        'weight_decay': [10**(-4)],  # [1.e-5, 1e-4, 1.e-3]
                         }
 elif MODEL_NAME == 'GAT_GNN':
     model = GAT_GNN
@@ -223,7 +223,7 @@ for task in dsets:
 # .. output the tasks
 splits.to_excel(metrics_history_path/'splits.xlsx', index=False)
 
-# set up the model configurations
+# set up the model configuration grid
 configuration_ID = 0
 configurations = []
 for model_parameter_values in product(*model_parameters.values()):
