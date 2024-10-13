@@ -45,20 +45,20 @@ flat_datasets = [
                 r'data/REACH/tabular/REACH_genotoxicity.xlsx',
 ]
 task_specifications = [
-    {'filters': {'assay': ['bacterial reverse mutation assay'], 'cell line/species': [#'Escherichia coli (WP2 Uvr A)',
-                                                                                      #'Salmonella typhimurium (TA 102)',
-                                                                                      'Salmonella typhimurium (TA 100)',
-                                                                                      #'Salmonella typhimurium (TA 1535)',
-                                                                                      'Salmonella typhimurium (TA 98)',
-                                                                                      #'Salmonella typhimurium (TA 1537)'
-                                                                                      ], 'metabolic activation': ['yes', 'no']},
-     'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay', 'cell line/species', 'metabolic activation']},
+     {'filters': {'assay': ['bacterial reverse mutation assay'], 'cell line/species': [#'Escherichia coli (WP2 Uvr A)',
+                                                                                       #'Salmonella typhimurium (TA 102)',
+                                                                                       'Salmonella typhimurium (TA 100)',
+                                                                                       #'Salmonella typhimurium (TA 1535)',
+                                                                                       'Salmonella typhimurium (TA 98)',
+                                                                                       #'Salmonella typhimurium (TA 1537)'
+                                                                                       ], 'metabolic activation': ['yes', 'no']},
+      'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay', 'cell line/species', 'metabolic activation']},
 
-    {'filters': {'assay': ['in vitro mammalian cell micronucleus test']},
-     'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
+     {'filters': {'assay': ['in vitro mammalian cell micronucleus test']},
+      'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
 
-    {'filters': {'assay': ['in vitro mammalian chromosome aberration test']},
-     'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
+     {'filters': {'assay': ['in vitro mammalian chromosome aberration test']},
+      'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
 
     # {'filters': {'assay': ['in vitro mammalian cell gene mutation test using the Hprt and xprt genes']},
     #  'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
@@ -241,13 +241,15 @@ fraction_positives = sum([1 for y in y_all if y == 'positive']) / len(y_all)
 
 
 
-
-def objective(trial) -> float:
+def objective(trial, best_value: float) -> float:
     '''
     Optuna objective function to optimise the hyperparameters by minimising the balanced accuracy
     :param trial: Optuna trial
+    param best_value: best value so far
     :return: balanced accuracy for the eval set
     '''
+
+
 
     try:
         # fetch the model and optimiser parameters
@@ -359,6 +361,15 @@ def objective(trial) -> float:
                 # save the metrics history
                 metrics_history.to_excel(outp / 'metrics_history.xlsx', index=False)
 
+                # if the first fold had balanced accuracy less than 3% of the maximum seen balanced accuracy do not continue with other folds
+                msk = (metrics_history['type'] == 'aggregate (epoch)') & metrics_history['task'].isnull() & (metrics_history['stage'] == 'eval')
+                objective_function_value_fold = metrics_history.loc[msk].groupby(['model fit', 'fold'])['balanced accuracy'].max().mean()
+                if objective_function_value_fold < best_value - 0.03:
+                    objective_function_value = objective_function_value_fold
+                    msg = f'balanced accuracy for fold {i_fold} is less than 3% of the maximum seen balanced accuracy, pruning the trial'
+                    log.info(msg)
+                    raise Exception(msg)
+
         # compute the objective function value as the mean for all folds and model fits
         metrics_history_trial = pd.concat(metrics_history_trial, axis='index', sort=False, ignore_index=True)
         msk = (metrics_history_trial['type'] == 'aggregate (epoch)') & metrics_history_trial['task'].isnull() & (metrics_history_trial['stage'] == 'eval')
@@ -381,11 +392,10 @@ def objective(trial) -> float:
             ba_eval_task = pd.Series(ba_eval_task).mean()
             trial.set_user_attr(f'BA {task}', ba_eval_task)
 
-
         return objective_function_value
 
     except Exception as ex:
-        log.error(f'Trial will be pruned because of: {ex}')
+        log.info(f'Trial will be pruned because of: {ex}')
         raise optuna.TrialPruned()
 
 study = optuna.create_study(
@@ -395,7 +405,7 @@ study = optuna.create_study(
     load_if_exists = True,
     direction = 'maximize'
 )
-study.optimize(objective, n_trials=180, n_jobs=1)
+study.optimize(lambda trial: objective(trial, study.best_value if  [trial for trial in study.get_trials() if trial.state == optuna.trial.TrialState.COMPLETE] else 0.), n_trials=180, n_jobs=1)
 
 # store the study for future analysis
 with open(output_path/'study.pickle', 'wb') as f:
@@ -404,139 +414,3 @@ study.trials_dataframe()
 
 
 
-
-
-# --------------------------------------
-
-#
-#
-#
-#
-#
-# # outer and inner cross-validation splits (in the interest of reproducibility, the order is deterministic for all splits)
-# cv_outer = StratifiedKFold(n_splits=K_FOLD_OUTER, random_state=PYTORCH_SEED, shuffle=True)
-# cv_inner = StratifiedKFold(n_splits=K_FOLD_INNER, random_state=PYTORCH_SEED, shuffle=True)
-# splits = []
-# for i_task, task in enumerate(dsets):
-#     dset = dsets[task]['dset']
-#     y_task = [d.assay_data for d in dset]
-#     y_task_dist = dict(Counter(y_task))
-#     per_pos_task = 100 * y_task_dist['positive'] / len(y_task)
-#     log.info(f"task {task}: {len(y_task):4d} data points, positives: {y_task_dist['positive']:4d} ({per_pos_task:.2f}%)")
-#
-#     for i_outer, (tmp_indices, test_indices) in enumerate(cv_outer.split(range(len(dset)), y=y_task)):
-#         y_outer_test = [d.assay_data for i, d in enumerate(dset) if i in test_indices]
-#         y_outer_test_dist = dict(Counter(y_outer_test))
-#         per_pos_test = 100 * y_outer_test_dist['positive'] / len(y_outer_test)
-#         log.info(f"task {task}, outer fold {i_outer}, test set: {len(y_outer_test):4d} data points, positives: {y_outer_test_dist['positive']:4d} ({per_pos_test:.2f}%)")
-#
-#         y_inner = [d.assay_data for i, d in enumerate(dset) if i in tmp_indices]
-#         for i_inner, (train_indices, evaluate_indices) in enumerate(cv_inner.split(range(len(tmp_indices)), y=y_inner)):
-#             train_indices = np.array([tmp_indices[i] for i in train_indices])
-#             evaluate_indices = np.array([tmp_indices[i] for i in evaluate_indices])
-#             y_inner_train = [d.assay_data for i, d in enumerate(dset) if i in train_indices]
-#             y_inner_train_dist = dict(Counter(y_inner_train))
-#             per_pos_inner_train = 100 * y_inner_train_dist['positive'] / len(y_inner_train)
-#             log.info(f"task {task}, outer fold {i_outer}, inner fold {i_inner}, train set: {len(y_inner_train):4d} data points, positives: {y_inner_train_dist['positive']:4d} ({per_pos_inner_train:.2f}%)")
-#             entry = {'task ID': i_task,
-#                      'task': task, 'outer fold': i_outer, 'inner fold': i_inner,
-#                      'train indices': train_indices, 'eval indices': evaluate_indices, 'test indices': test_indices,
-#                      'task # data points': len(dset),
-#                      'test # data points': len(test_indices),
-#                      'train # data points': len(train_indices),
-#                      'task %positives': per_pos_task,
-#                      'test %positives': per_pos_test,
-#                      'train %positives': per_pos_inner_train,
-#                      }
-#             splits.append(entry)
-# splits = pd.DataFrame(splits)
-# for task in dsets:
-#     tmp = splits.loc[splits['task']==task, ['task %positives', 'test %positives', 'train %positives']].describe().loc[['min', 'max']].to_markdown()
-#     log.info(f'task {task}, %positives in different splits\n{tmp}')
-# # .. output the tasks
-# splits.to_excel(metrics_history_path/'splits.xlsx', index=False)
-#
-# # set up the model configurations
-# configuration_ID = 0
-# configurations = []
-# for model_parameter_values in product(*model_parameters.values()):
-#     configuration = {'configuration_ID': configuration_ID}
-#     configuration.update(dict(zip(model_parameters.keys(), model_parameter_values)))
-#     configurations.append(configuration)
-#     configuration_ID += 1
-# log.info(f'number of configurations: {len(configurations)}')
-# # .. shuffle to sample the configurations randomly
-# random.seed(PYTORCH_SEED)
-# random.shuffle(configurations)
-# # .. output the configurations
-# pd.DataFrame(configurations).to_excel(metrics_history_path/'configurations.xlsx', index=False)
-#
-#
-# # # --------------------------------------
-# # # export the dataset for the first outer iteration to build a model with deep chem
-# # msk = (splits['outer fold']==0) & (splits['inner fold']==0)
-# # train_indices = splits.loc[msk, 'train indices'].iloc[0]
-# # eval_indices = splits.loc[msk, 'eval indices'].iloc[0]
-# # test_indices = splits.loc[msk, 'test indices'].iloc[0]
-# # molecule_ids = dsets['in vitro, in vitro gene mutation study in bacteria']['dset'].data.molecule_id
-# # genotox_data = pd.read_excel('data/combined/tabular/genotoxicity_dataset.xlsx')
-# # # .. training/eval set
-# # molecule_ids_train_eval = [molecule_ids[i] for i in np.concatenate([train_indices, eval_indices])]
-# # msk = genotox_data['source record ID'].isin(molecule_ids_train_eval)
-# # train_eval_smiles = genotox_data.loc[msk, 'smiles_std']
-# # train_eval_y = [1 if gentox=='positive' else 0 for gentox in genotox_data.loc[msk, 'genotoxicity'].to_list()]
-# # # .. training/eval set
-# # molecule_ids_test = [molecule_ids[i] for i in test_indices]
-# # msk = genotox_data['source record ID'].isin(molecule_ids_test)
-# # test_smiles = genotox_data.loc[msk, 'smiles_std']
-# # test_y = [1 if gentox=='positive' else 0 for gentox in genotox_data.loc[msk, 'genotoxicity'].to_list()]
-# # # store train_eval_smiles, train_eval_y, test_smiles, test_y in a pickle
-# # import pickle
-# # with open('junk/deepchem_data.pickle', 'wb') as f:
-# #     pickle.dump((train_eval_smiles, train_eval_y, test_smiles, test_y), f)
-# # # --------------------------------------
-#
-#
-# # nested cross-validation
-# nested_cross_validation(model,
-#                         dsets,
-#                         splits,
-#                         configurations,
-#                         PYTORCH_SEED,
-#                         BATCH_SIZE_MAX,
-#                         NUM_EPOCHS,
-#                         SCALE_LOSS_CLASS_SIZE,
-#                         SCALE_LOSS_TASK_SIZE,
-#                         device,
-#                         metrics_history_path)
-#
-#
-# # consolidate the metrics for each outer iteration and list the optimal configuration for each outer iteration
-# consolidate_metrics_outer(metrics_history_path/'metrics_history.tsv',
-#                           metrics_history_path/'metrics_history_outer.xlsx',
-#                           task_names=list(dsets.keys()),
-#                           configuration_parameters=list(configurations[0].keys()))
-#
-#
-# # plot the average metrics for all outer iterations as a function of epoch (range is shown as a shaded area)
-# task_names = [f'task {i_task}' for i_task in range(len(tasks))]
-# plot_metrics_convergence_outer_average(metrics_history_path/'metrics_history.tsv',
-#                                        metrics_history_path/'metrics_convergence_outer_average.png',
-#                                        task_names=task_names)
-#
-#
-# # plot the average ROC for all outer iterations (range is shown as a shaded area)
-# roc_curve_outer_path = metrics_history_path/'roc_outer_average.png'
-# plot_roc_curve_outer_average(metrics_history_path, roc_curve_outer_path)
-#
-# # report the balanced accuracy for the test set
-# metrics_history_outer = pd.read_excel(metrics_history_path/'metrics_history_outer.xlsx', sheet_name='task')
-# cols = ['outer fold'] + [col for col in metrics_history_outer.columns if 'test_balanced accuracy' in col]
-# metrics_history_outer_summary = metrics_history_outer.loc[metrics_history_outer['outer fold']!='All', cols].melt(id_vars='outer fold', var_name='task', value_name='balanced accuracy (test)')
-# log.info(metrics_history_outer_summary.groupby('task')['balanced accuracy (test)'].agg(['mean', 'min', 'max']))
-#
-# # ----------  delete after this line
-#
-#
-#
-#
