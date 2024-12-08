@@ -5,7 +5,7 @@ import pandas as pd
 # do not fold dataframes
 pd.set_option('expand_frame_repr', False)
 # maximum number of columns
-pd.set_option("display.max_columns",50)
+pd.set_option("display.max_columns",100)
 # maximum number of rows
 pd.set_option("display.max_rows",500)
 # precision of float numbers

@@ -106,7 +106,7 @@ class PyG_Dataset(InMemoryDataset):
         Processes the raw data from the sdf file to prepare a PyTorch Geometric list of Data objects
         '''
 
-        # read the sdf file with the raw data
+        # read the sdf file with the data
         mols = read_sdf(self.raw_file_names[0])
 
         # collect the adjacency information, the node features, the edge features and the assay_results
@@ -182,7 +182,7 @@ class PyG_Dataset(InMemoryDataset):
                 log.info(f'skipping molecule {i_mol} because of missing task {self.task}')
                 continue
             assay_data = tmp.loc[msk, 'genotoxicity'].iloc[0]
-            molecule_ID = tmp.loc[msk, 'source record ID'].iloc[0]
+            datapoint_ID = tmp.loc[msk, 'datapoint ID'].iloc[0]
 
             if assay_data == 'ambiguous':
                 if self.ambiguous_outcomes == 'ignore':
@@ -201,14 +201,14 @@ class PyG_Dataset(InMemoryDataset):
             elif assay_data == 'not available':
                 continue
 
-            # create the data object and set the molecule ID for ease of use (not necessary for the model)
+            # create the data object and set the datapoint ID for ease of use (not necessary for the model)
             # we set the assay data as a property of the data object and leave y to be None at this stage
             data = Data(x=x,
                         edge_index=edge_index,
                         edge_attr=edge_attr,
                         y=None,
                         assay_data=assay_data,
-                        molecule_id=molecule_ID,
+                        datapoint_id=datapoint_ID,
                         )
 
             data_list.append(data)
@@ -227,4 +227,4 @@ class PyG_Dataset(InMemoryDataset):
 
     def get_node_edge_feature_names(self):
         '''Returns the names of the node and edge features'''
-        return self.node_feats_names, self.edge_attr_names
+        return self.node_feats_names.to_list(), self.edge_attr_names.to_list()

@@ -96,6 +96,7 @@ def train_eval(net,
             total_batch_size = sum([len(task_batch) for task_batch in batches])
             losses_task = torch.zeros(len(train_loaders)).to(device)
             for i_task, task_batch in enumerate(batches):
+                task_batch.to(device)
                 metrics_batch_task = {'epoch': i_epoch, 'batch': i_batch, 'task': i_task, 'stage': 'train', 'type': 'raw', 'number of datapoints': len(task_batch)}
                 n_datapoints += len(task_batch)
 
@@ -214,6 +215,7 @@ def train_eval(net,
                     prob_train_epoch = []
                     y_train_epoch = []
                     for task_batch in train_loaders[i_task]:
+                        task_batch.to(device)
                         pred = net(task_batch.x, task_batch.edge_index, task_batch.edge_attr, task_batch.batch, task_id=i_task)
                         prob_train_epoch.append(torch.nn.functional.softmax(pred, dim=1).detach().cpu().numpy())
                         y_train_epoch.append([1 if assay_data == 'positive' else 0 for assay_data in task_batch.assay_data])
@@ -228,11 +230,13 @@ def train_eval(net,
 
                 # evaluate the model on the eval set
                 for i_batch, batches in enumerate(zip_recycle(*eval_loaders)):
+                    task_batch.to(device)
                     metrics_batch = []
                     loss = torch.tensor(0.).to(device)
                     n_datapoints = 0
                     total_batch_size = sum([len(task_batch) for task_batch in batches])
                     for i_task, task_batch in enumerate(batches):
+                        task_batch.to(device)
                         metrics_batch_task = {'epoch': i_epoch, 'batch': i_batch, 'task': i_task, 'stage': 'eval', 'type': 'raw', 'number of datapoints': len(task_batch)}
                         n_datapoints += len(task_batch)
 
@@ -301,6 +305,7 @@ def train_eval(net,
                 prob_eval_epoch = []
                 y_eval_epoch = []
                 for task_batch in eval_loaders[i_task]:
+                    task_batch.to(device)
                     pred = net(task_batch.x, task_batch.edge_index, task_batch.edge_attr, task_batch.batch, task_id=i_task)
                     prob_eval_epoch.append(torch.nn.functional.softmax(pred, dim=1).detach().cpu().numpy())
                     y_eval_epoch.append([1 if assay_data == 'positive' else 0 for assay_data in task_batch.assay_data])

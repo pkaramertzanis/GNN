@@ -204,18 +204,44 @@ def create_sdf(flat_datasets: list,
         structures = pd.DataFrame(structures)
         aggregated_dataset = dataset.loc[msk].merge(structures, on='smiles', how='inner')
 
-        # aggregate
-        aggregated_dataset = (aggregated_dataset.groupby(['smiles_std'] + task_aggregation_cols)[['genotoxicity', 'CAS number', 'source record ID', 'smiles']]
-               .agg({'genotoxicity': lambda vals: x[0] if len(x:=vals.dropna().drop_duplicates().to_list())==1 else 'ambiguous' if len(x)>1 else 'not available',
-                     'CAS number': lambda rns: ', '.join(sorted(rns.dropna().drop_duplicates().to_list())),
-                     'source record ID': lambda srids: ', '.join(sorted(srids.dropna().drop_duplicates().to_list())),
-                     'smiles':  lambda smis: ', '.join(sorted(smis.dropna().drop_duplicates().to_list()))
-                  })
-               .reset_index()
-               )
+        # aggregate all genotoxicity calls for the same source, smiles_std and task
+        # set to positive if at least one positive, ambiguous if at least one ambiguous, otherwise negative
+        def f(group):
+            genotoxicity = 'positive' if 'positive' in group['genotoxicity'].to_list() else 'ambiguous' if 'ambiguous' in group['genotoxicity'].to_list() else 'negative'
+            source_details = group.groupby('genotoxicity')['source record ID',].agg(lambda x: x.drop_duplicates().to_list()).reset_index().to_dict(orient='records')
+            return pd.Series({'genotoxicity': genotoxicity, 'source details': source_details})
+        aggregated_dataset = aggregated_dataset.groupby(['smiles_std', 'source'] + task_aggregation_cols)[['genotoxicity', 'CAS number', 'source record ID']].apply(f).reset_index()
+
+        # aggregate all genotoxicity calls for the same smiles_std and task
+        # set to positive if all are positive, negative if all are negative, otherwise ambiguous
+        def f(group):
+            if {'positive'} == set(group['genotoxicity']):
+                genotoxicity = 'positive'
+            elif {'negative'} == set(group['genotoxicity']):
+                genotoxicity = 'negative'
+            else:
+                genotoxicity = 'ambiguous'
+            genotoxicity_details = group[['genotoxicity', 'source', 'source details']].rename({'genotoxicity': 'genotoxicity (source)'}, axis='columns').to_dict(orient='records')
+            return pd.Series({'genotoxicity': genotoxicity, 'genotoxicity details': genotoxicity_details})
+        aggregated_dataset = aggregated_dataset.groupby(['smiles_std'] + task_aggregation_cols)[['genotoxicity', 'source', 'source details']].apply(f).reset_index()
+
+        # # aggregate, set to positive if at least one positive, ambiguous if at least one ambiguous, otherwise negative
+        # aggregated_dataset = (aggregated_dataset.groupby(['smiles_std'] + task_aggregation_cols)[['genotoxicity', 'CAS number', 'source record ID', 'smiles']]
+        #        .agg({
+        #                 # 'genotoxicity': lambda vals: x[0] if len(x:=vals.dropna().drop_duplicates().to_list())==1 else 'ambiguous' if len(x)>1 else 'not available',
+        #                 'genotoxicity':  lambda vals: 'positive' if 'positive' in vals.to_list() else 'ambiguous' if 'ambiguous' in vals.to_list() else 'negative',
+        #                 'CAS number': lambda rns: ', '.join(sorted(rns.dropna().drop_duplicates().to_list())),
+        #                 'source record ID': lambda srids: ', '.join(sorted(srids.dropna().drop_duplicates().to_list())),
+        #                 'smiles':  lambda smis: ', '.join(sorted(smis.dropna().drop_duplicates().to_list()))
+        #           })
+        #        .reset_index()
+        #        )
+        # # .. genotoxicity outcomes per database to enable concordance analysis
+        # aggregated_dataset = aggregated_dataset.merge(tmp, on=['smiles_std'] + task_aggregation_cols, how='left')
         aggregated_dataset['task aggregation'] = aggregated_dataset[task_aggregation_cols].apply(lambda row: ', '.join(row.index), axis='columns')
         aggregated_dataset['task'] = aggregated_dataset[task_aggregation_cols].apply(lambda row: ', '.join(row.to_list()), axis='columns')
         aggregated_dataset = aggregated_dataset.drop(task_aggregation_cols, axis='columns')
+
 
         aggregated_datasets.append(aggregated_dataset)
 
@@ -226,11 +252,14 @@ def create_sdf(flat_datasets: list,
 
     # create the tabular file
     log.info(f'writing genotoxicity dataset to {outp_tab}')
+    aggregated_datasets['genotoxicity details'] = aggregated_datasets['genotoxicity details'].apply(json.dumps)
+    aggregated_datasets = aggregated_datasets.reset_index(drop=True).reset_index(drop=False).rename({'index': 'datapoint ID'}, axis=1)
     aggregated_datasets.to_excel(outp_tab, index=False)
 
     # create the sdf file
     log.info(f'writing genotoxicity dataset to {outp_sdf}')
-    aggregated_datasets = aggregated_datasets.groupby('smiles_std')[['smiles_std', 'task aggregation', 'task', 'CAS number', 'source record ID', 'genotoxicity']].apply(lambda x: x.to_json(orient='records')).rename('genotoxicity').reset_index()
+    aggregated_datasets['genotoxicity details'] = aggregated_datasets['genotoxicity details'].apply(json.loads)
+    aggregated_datasets = aggregated_datasets.groupby('smiles_std')[[ 'datapoint ID', 'smiles_std', 'task aggregation', 'task',  'genotoxicity', 'genotoxicity details']].apply(lambda x: x.to_json(orient='records')).rename('genotoxicity').reset_index()
     with Chem.SDWriter(outp_sdf) as sdf_writer:
         for idx, row in tqdm(aggregated_datasets.iterrows()):
             mol = Chem.MolFromSmiles(row['smiles_std'])
@@ -239,70 +268,3 @@ def create_sdf(flat_datasets: list,
 
     return tasks
 
-
-    # ----
-
-    #
-    #
-    # # remove records with unknown task aggregation columns
-    # if filter_unknown:
-    #     msk = dataset[task_aggregation_cols].apply(lambda row: 'unknown' not in row.to_list(), axis='columns')
-    #     dataset = dataset.loc[msk]
-    #     log.info(f'from {len(msk)} records {(~msk).sum()} were removed because at least one of the task aggregation columns was unknown')
-    #
-    # # keeps only selected records
-    # if record_selection is not None:
-    #     msk = []
-    #     for col, vals in record_selection.items():
-    #         msk.append(dataset[col].isin(vals))
-    #     msk = reduce(lambda x, y: x & y, msk)
-    #     dataset = dataset.loc[msk]
-    #     log.info(f'from {len(msk)} records {(~msk).sum()} were removed because of the applied filters on the records')
-    #
-    #
-    # # preprocess the structures, some may be removed by the checker and due to the applied operations
-    # smiles_list = dataset['smiles'].drop_duplicates().to_list()
-    # structures = []
-    # for smiles in tqdm(smiles_list):
-    #     smiles_std, rdkit_mol_std, processing_details = process_smiles(smiles)
-    #     if smiles_std is not None:
-    #         if '/' in smiles_std:
-    #             assert 1 == 0
-    #         structures.append({'smiles': smiles, 'smiles_std': smiles_std, 'rdkit_mol_std': rdkit_mol_std,
-    #                            'processing details': processing_details})
-    # log.info(f'{len(structures)} out of {len(smiles_list)} structures remain after preprocessing')
-    #
-    # # merge structures into the dataset
-    # structures = pd.DataFrame(structures)
-    # dataset = dataset.merge(structures, on='smiles', how='inner')
-    #
-    # agg_cols = task_aggregation_cols # this can be modified to create different tasks
-    # res = (dataset.groupby(['smiles_std'] + agg_cols)[['genotoxicity', 'CAS number', 'source record ID', 'smiles']]
-    #        .agg({'genotoxicity': lambda vals: x[0] if len(x:=vals.dropna().drop_duplicates().to_list())==1 else 'ambiguous' if len(x)>1 else 'not available',
-    #              'CAS number': lambda rns: ', '.join(sorted(rns.dropna().drop_duplicates().to_list())),
-    #              'source record ID': lambda srids: ', '.join(sorted(srids.dropna().drop_duplicates().to_list())),
-    #              'smiles':  lambda smis: ', '.join(sorted(smis.dropna().drop_duplicates().to_list()))
-    #              })
-    #        .reset_index()
-    #        )
-    # res['task aggregation'] = res[agg_cols].apply(lambda row: ', '.join(row.index), axis='columns')
-    # res['task'] = res[agg_cols].apply(lambda row: ', '.join(row.to_list()), axis='columns')
-    # res = res.drop(agg_cols, axis='columns')
-    #
-    # # list of tasks
-    # tasks = res['task'].drop_duplicates().to_list()
-    #
-    # # create the tabular file
-    # log.info(f'writing genotoxicity dataset to {outp_tab}')
-    # res.to_excel(outp_tab, index=False)
-    #
-    # # create the sdf file
-    # log.info(f'writing genotoxicity dataset to {outp_sdf}')
-    # res = res.groupby('smiles_std')[['smiles_std', 'task aggregation', 'task', 'CAS number', 'source record ID', 'genotoxicity']].apply(lambda x: x.to_json(orient='records')).rename('genotoxicity').reset_index()
-    # with Chem.SDWriter(outp_sdf) as sdf_writer:
-    #     for idx, row in tqdm(res.iterrows()):
-    #         mol = Chem.MolFromSmiles(row['smiles_std'])
-    #         mol.SetProp('genotoxicity', row['genotoxicity'])
-    #         sdf_writer.write(mol)
-    #
-    # return tasks

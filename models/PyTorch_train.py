@@ -39,8 +39,8 @@ def train_eval(net,
     In any case, the handling of ambiguous calls should be done using ordinal regression as the classes have order.
 
     :param net: PyTorch model
-    :param train_loaders: PyTorch Geometric DataLoaders with the training data for the different tasks
-    :param eval_loaders: PyTorch Geometric DataLoaders with the eval data for the different tasks
+    :param train_loaders: PyTorch  DataLoaders with the training data for the different tasks
+    :param eval_loaders: PyTorch DataLoaders with the eval data for the different tasks
     :param global_loss_fn: PyTorch cross entropy loss function, if None we define a loss function per task/batch by scaling the positives
     :param optimizer: PyTorch optimizer
     :param scheduler: PyTorch learning rate scheduler
@@ -83,6 +83,7 @@ def train_eval(net,
             total_batch_size = sum([len(task_batch[0]) for task_batch in batches])
             losses_task = torch.zeros(len(train_loaders)).to(device)
             for i_task, task_batch in enumerate(batches):
+                task_batch.to(device)
                 metrics_batch_task = {'epoch': i_epoch, 'batch': i_batch, 'task': i_task, 'stage': 'train', 'type': 'raw', 'number of datapoints': len(task_batch[0])}
                 n_datapoints += len(task_batch[0])
 
@@ -216,6 +217,7 @@ def train_eval(net,
                     n_datapoints = 0
                     total_batch_size = sum([len(task_batch[0]) for task_batch in batches])
                     for i_task, task_batch in enumerate(batches):
+                        task_batch.to(device)
                         metrics_batch_task = {'epoch': i_epoch, 'batch': i_batch, 'task': i_task, 'stage': 'eval', 'type': 'raw', 'number of datapoints': len(task_batch[0])}
                         n_datapoints += len(task_batch[0])
 

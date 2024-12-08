@@ -17,8 +17,9 @@ class MPNN_GNN(torch.nn.Module):
                  n_lin: int,
                  n_lin_hidden: int,
                  dropout: float,
-                 activation_function: Callable,
-                 n_classes: [int]):
+                 n_classes: [int],
+                 activation_function: Callable = torch.nn.functional.leaky_relu
+                 ):
         """
         Implements the GCN multitask classifier in PyTorch Geometric
         :param num_node_features: number of node features
@@ -29,8 +30,8 @@ class MPNN_GNN(torch.nn.Module):
         :param n_lin: number of linear layers
         :param n_lin_hidden: number of hidden features in the linear layers
         :param dropout: dropout rate
-        :param activation_function: PyTorch activation function, e.g. torch.nn.functional.relu or torch.nn.functional.leaky_relu
         :param n_classes: array with the number of output classes in each classification task
+        :param activation_function: PyTorch activation function, e.g. torch.nn.functional.relu or torch.nn.functional.leaky_relu
         """
         super().__init__()
 

@@ -1,4 +1,6 @@
 # setup logging
+from optuna.trial import TrialState
+
 import logger
 import logging
 log = logger.setup_applevel_logger(file_name ='logs/FFNN_model_fit.log', level_stream=logging.DEBUG, level_file=logging.DEBUG)
@@ -44,10 +46,9 @@ from data.combine import create_sdf
 
 from models.FFNN.FFNN import FFNNModel
 
-from models.metrics import (plot_metrics_convergence, consolidate_metrics_outer,
-                            plot_metrics_convergence_outer_average, plot_roc_curve_outer_average)
+from models.metrics import plot_metrics_convergence
+
 from models.PyTorch_train import train_eval
-from models.PyTorch_nested_cross_validation import nested_cross_validation
 
 import optuna
 from optuna.distributions import CategoricalDistribution, FloatDistribution, IntDistribution
@@ -57,33 +58,44 @@ from cheminformatics.rdkit_toolkit import read_sdf
 from rdkit.Chem import AllChem
 from tqdm import tqdm
 
+# set the model architecture
+MODEL_NAME = 'FNN'
+
+# location to store the results
+output_path = Path(rf'output/develop')/MODEL_NAME
+output_path.mkdir(parents=True, exist_ok=True)
+
 # set the device
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-
 # set up the dataset
 flat_datasets = [
-                #r'data/Hansen_2009/tabular/Hansen_2009_genotoxicity.xlsx',
+                # r'data/Hansen_2009/tabular/Hansen_2009_genotoxicity.xlsx',
                 # r'data/Leadscope/tabular/Leadscope_genotoxicity.xlsx',
+                r'data/ECVAM_AmesNegative/tabular/ECVAM_Ames_negative_genotoxicity.xlsx',
+                r'data/ECVAM_AmesPositive/tabular/ECVAM_Ames_positive_genotoxicity.xlsx',
+                r'data/QSARChallengeProject/tabular/QSARChallengeProject.xlsx',
+                r'data/QSARToolbox/tabular/QSARToolbox_genotoxicity.xlsx',
                 r'data/REACH/tabular/REACH_genotoxicity.xlsx',
-                r'data/QSARToolbox/tabular/QSARToolbox_genotoxicity.xlsx'
-                ]
+]
 task_specifications = [
-     {'filters': {'assay': ['bacterial reverse mutation assay'], 'cell line/species': ['Escherichia coli (WP2 Uvr A)',
-                                                                                       'Salmonella typhimurium (TA 102)',
-                                                                                       'Salmonella typhimurium (TA 100)',
-                                                                                       'Salmonella typhimurium (TA 1535)',
-                                                                                       'Salmonella typhimurium (TA 98)',
-                                                                                       'Salmonella typhimurium (TA 1537)'
-                                                                                       ], 'metabolic activation': ['yes', 'no']},
-      # 'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay', 'cell line/species', 'metabolic activation']},
-      'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay', ]},
+     # {'filters': {'assay': ['bacterial reverse mutation assay'], 'cell line/species': ['Escherichia coli (WP2 Uvr A)',
+     #                                                                                   'Salmonella typhimurium (TA 102)',
+     #                                                                                   'Salmonella typhimurium (TA 100)',
+     #                                                                                   'Salmonella typhimurium (TA 1535)',
+     #                                                                                   'Salmonella typhimurium (TA 98)',
+     #                                                                                   'Salmonella typhimurium (TA 1537)'
+     #                                                                                   ], 'metabolic activation': ['yes', 'no']},
+     #  'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay', 'cell line/species', 'metabolic activation']},
 
-     # {'filters': {'assay': ['in vitro mammalian cell micronucleus test']},
-     #  'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
-     #
-     # {'filters': {'assay': ['in vitro mammalian chromosome aberration test']},
-     #  'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
+    # {'filters': {'assay': ['bacterial reverse mutation assay']},
+    #  'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
+
+    {'filters': {'assay': ['in vitro mammalian cell micronucleus test']},
+      'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
+
+     {'filters': {'assay': ['in vitro mammalian chromosome aberration test']},
+      'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
 
     # {'filters': {'assay': ['in vitro mammalian cell gene mutation test using the Hprt and xprt genes']},
     #  'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
@@ -91,27 +103,44 @@ task_specifications = [
     # {'filters': {'assay': ['in vitro mammalian cell gene mutation test using the thymidine kinase gene']},
     #  'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
 
-    # {'filters': {'endpoint': ['in vitro gene mutation study in mammalian cells']},
-    #  'task aggregation columns': ['in vitro/in vivo', 'endpoint']},
+    {'filters': {'endpoint': ['in vitro gene mutation study in mammalian cells']},
+     'task aggregation columns': ['in vitro/in vivo', 'endpoint']},
 
 ]
 # task_specifications = [
-#     {'filters': {'assay': ['bacterial reverse mutation assay'], },
-#      'task aggregation columns': ['in vitro/in vivo', 'endpoint']},
+#      {'filters': {'assay': ['bacterial reverse mutation assay'], },
+#       'task aggregation columns': ['in vitro/in vivo', 'endpoint']},
 # ]
-outp_sdf = Path(r'data/combined/sdf/genotoxicity_dataset.sdf')
-outp_tab = Path(r'data/combined/tabular/genotoxicity_dataset.xlsx')
+# task_specifications = [
+#     {'filters': {'assay': ['bacterial reverse mutation assay'], 'cell line/species': [#'Escherichia coli (WP2 Uvr A)',
+#                                                                                       #'Salmonella typhimurium (TA 102)',
+#                                                                                       'Salmonella typhimurium (TA 100)',
+#                                                                                       #'Salmonella typhimurium (TA 1535)',
+#                                                                                       'Salmonella typhimurium (TA 98)',
+#                                                                                       #'Salmonella typhimurium (TA 1537)'
+#                                                                                       ], 'metabolic activation': ['yes', 'no']},
+#      'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay', 'cell line/species']},
+#
+# ]
+training_eval_dataset_path_tabular = Path(output_path / 'training_eval_dataset/tabular')
+training_eval_dataset_path_tabular.mkdir(parents=True, exist_ok=True)
+training_eval_dataset_path_sdf = Path(output_path / 'training_eval_dataset/sdf')
+training_eval_dataset_path_sdf.mkdir(parents=True, exist_ok=True)
+outp_sdf = Path(training_eval_dataset_path_sdf/'genotoxicity_dataset.sdf')
+outp_tab = Path(training_eval_dataset_path_tabular/'genotoxicity_dataset.xlsx')
 tasks = create_sdf(flat_datasets = flat_datasets,
                    task_specifications = task_specifications,
                    outp_sdf = outp_sdf,
                    outp_tab = outp_tab)
 
 # set general parameters
+N_TRIALS = 2 # number of trials to be attempted by the Optuna optimiser
+STUDY_NAME = "develop_FNN" # name of the study in the Optuna sqlit database
 PYTORCH_SEED = 1 # seed for PyTorch random number generator, it is also used for splits and shuffling to ensure reproducibility
 MINIMUM_TASK_DATASET = 300 # minimum number of data points for a task
 BATCH_SIZE_MAX = 1024 # maximum batch size (largest task, the smaller tasks are scaled accordingly so the number of batches is the same)
 K_FOLD = 5 # number of folds for the cross-validation
-MAX_NUM_EPOCHS = 500 # maximum number of epochs
+MAX_NUM_EPOCHS = 2 # maximum number of epochs
 MODEL_NAME = 'FFNN' # name of the model, can be 'MPNN_GNN', 'AttentiveFP_GNN' or 'GAT_GNN'
 SCALE_LOSS_TASK_SIZE = None # how to scale the loss function, can be 'equal task' or None
 SCALE_LOSS_CLASS_SIZE = 'equal class (task)' # how to scale the loss function, can be 'equal class (task)', 'equal class (global)' or None
@@ -121,12 +150,10 @@ LOG_EPOCH_FREQUENCY = 10
 EARLY_STOPPING_LOSS_EVAL = 20
 EARLY_STOPPING_ROC_EVAL = 10
 EARLY_STOPPING_THRESHOLD = 1.e-2
-NUMBER_MODEL_FITS = 1  # number of model fits in each fold
+NUMBER_MODEL_FITS = 2  # number of model fits in each fold
 
 
-# location to store the metrics logs
-output_path = Path(rf'D:\myApplications\local\2024_01_21_GCN_Muta\output\iteration121')/MODEL_NAME
-output_path.mkdir(parents=True, exist_ok=True)
+
 
 # fingerprint parameters
 fingerprint_parameters = {'radius': 2,
@@ -137,14 +164,14 @@ fingerprint_parameters = {'radius': 2,
 # hyperparameter search space
 hyperparameters = {
     'model parameters': {
-        'size_hidden_layers': IntDistribution(low=50, high=300, log=False, step=25),
+        'size_hidden_layers': IntDistribution(low=50, high=400, log=False, step=25),
         'number_hidden_layers': IntDistribution(low=1, high=4, log=False, step=1),
         'dropout': FloatDistribution(low=0.0, high=0.8, step=None, log=False),
     },
     'optimiser parameters': {
         'learning_rate': FloatDistribution(low=1.e-5, high=1.e-2, step=None, log=True),
-        'weight_decay': FloatDistribution(low=1.e-6, high=1.e-2, step=None, log=True),
-        'scheduler_decay': FloatDistribution(low=0.94, high=0.98, step=None, log=False)
+        'weight_decay': FloatDistribution(low=1.e-7, high=1.e-2, step=None, log=True),
+        'scheduler_decay': FloatDistribution(low=0.94, high=0.99, step=None, log=False)
     }
 }
 
@@ -181,7 +208,11 @@ X = np.array([[float(bit) for bit in list(fg)] for fg in X.to_list()], dtype=np.
 # genotoxicity outcomes for each task
 task_outcomes = data.pivot(index='molecule ID',columns='task',values='genotoxicity')
 
-
+# store the fingerprint parameters and task names
+with open(output_path/'fingerprint_tasks.json', 'w') as f:
+    fingerprint_tasks = {'fingerprint parameters': fingerprint_parameters,
+                         'tasks': list(task_outcomes.columns)}
+    json.dump(fingerprint_parameters, f)
 
 # set up the cross-validation splits
 cv = StratifiedKFold(n_splits=K_FOLD, random_state=PYTORCH_SEED, shuffle=True)
@@ -414,12 +445,12 @@ def objective(trial) -> float:
 
 study = optuna.create_study(
     sampler = optuna.samplers.GPSampler(seed = PYTORCH_SEED),
-    storage = "sqlite:///db.sqlite3",  # Specify the storage URL here.
-    study_name = "121_FFNN_TA98/100/102/1535/1537+-_EcoliWP2UvrA+-_aggr_assay_call_fg2048count",
+    storage = f"sqlite:///{output_path}/db.sqlite3",  # Specify the storage URL here.
+    study_name = STUDY_NAME,
     load_if_exists = True,
     direction = 'maximize'
 )
-study.optimize(objective, n_trials=200, n_jobs=1)
+study.optimize(objective, n_trials=N_TRIALS, n_jobs=1)
 
 # store the study for future analysis
 with open(output_path/'study.pickle', 'wb') as f:
@@ -429,6 +460,88 @@ study.trials_dataframe()
 
 
 
-
-
+# refit the best model configuration to the whole training set, we do multiple fits and all are used for inference
+# .. find the optimal model configuration
+best_trial = study.best_trial
+model_parameters = dict()
+for parameter in hyperparameters['model parameters']:
+    # model_parameters[parameter.name] = getattr(trial, parameter.type)(parameter.name, parameter.lower_bound, parameter.upper_bound, log=parameter.log)
+    model_parameters[parameter] = best_trial.params[parameter]
+optimiser_parameters = dict()
+for parameter in hyperparameters['optimiser parameters']:
+    # optimiser_parameters[parameter.name] = getattr(trial, parameter.type)(parameter.name, parameter.lower_bound, parameter.upper_bound, log=parameter.log)
+    optimiser_parameters[parameter] = best_trial.params[parameter]
+# .. create the loaders
+train_loaders, eval_loaders = [], []
+train_set_size_max = max(len(dsets[task]['dset']) for task in dsets)  # largest train set size among tasks
+for task in dsets:
+    # train set is the whole set and is also used as eval set but without dropping the last batch
+    train_set = dsets[task]['dset']
+    batch_size = round(BATCH_SIZE_MAX * len(train_set) / float(train_set_size_max))
+    train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True, drop_last=DROP_LAST_TRAINING if len(train_set) > batch_size else False)
+    train_loaders.append(train_loader)
+    # eval set
+    eval_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True, drop_last=False)
+    eval_loaders.append(eval_loader)
+    log.info(f'task {task}, train set: {len(train_set):4d} data points in {len(train_loader)} batches, eval set: {len(train_set):4d} data points in {len(eval_loader)} batches')
+# number of classes
+n_classes = [2] * len(dsets)
+# if specified, scale the loss so that each class contributes according to its size or equally
+# default reduction is mean
+if SCALE_LOSS_CLASS_SIZE is None:
+    global_loss_fn = torch.nn.CrossEntropyLoss(weight=torch.tensor([1., 1.]).to(device))
+elif SCALE_LOSS_CLASS_SIZE == 'equal class (global)':
+    global_loss_fn = torch.nn.CrossEntropyLoss(
+        weight=torch.tensor([fraction_positives, 1. - fraction_positives]).to(device))
+elif SCALE_LOSS_CLASS_SIZE == 'equal class (task)':
+    # in this case we define a separate loss function per task in the train_eval function
+    global_loss_fn = None
+# reset the seed for deterministic behaviour
+torch.manual_seed(PYTORCH_SEED)
+if torch.cuda.is_available():
+    torch.cuda.manual_seed_all(PYTORCH_SEED)
+# repeat model fits with different initial seeds
+for i_model_fit in range(NUMBER_MODEL_FITS):
+    log.info(f'Initiating model fit {i_model_fit}')
+    # set up the model
+    hidden_layers = [model_parameters['size_hidden_layers']] * model_parameters['number_hidden_layers']
+    net = FFNNModel(n_input=fingerprint_parameters['fpSize'], hidden_layers=hidden_layers,
+                    dropout=model_parameters['dropout'], n_classes=n_classes)
+    net.to(device)
+    # set up the optimiser
+    optimizer = torch.optim.Adam(net.parameters(), lr=optimiser_parameters['learning_rate'],
+                                 betas=[0.9, 0.999], eps=1e-08,
+                                 weight_decay=optimiser_parameters['weight_decay'], amsgrad=False)
+    # set up the scheduler
+    lambda_group = lambda epoch: optimiser_parameters['scheduler_decay'] ** epoch
+    scheduler = LambdaLR(optimizer, lr_lambda=[lambda_group])
+    # train the model
+    metrics_history = train_eval(net, train_loaders, eval_loaders, global_loss_fn,
+                                 optimizer, scheduler, MAX_NUM_EPOCHS,
+                                 weight_converge_path=None,
+                                 early_stopping={'loss_eval': EARLY_STOPPING_LOSS_EVAL,
+                                                 'roc_eval': EARLY_STOPPING_ROC_EVAL,
+                                                 'threshold': EARLY_STOPPING_THRESHOLD},
+                                 log_epoch_frequency=LOG_EPOCH_FREQUENCY,
+                                 scale_loss_task_size=SCALE_LOSS_TASK_SIZE)
+    # store the metrics
+    metrics_history = pd.DataFrame(metrics_history)
+    metrics_history.insert(0, 'fold', i_fold)
+    metrics_history.insert(0, 'model fit', i_model_fit)
+    for col in reversed(optimiser_parameters):
+        metrics_history.insert(0, col, optimiser_parameters[col])
+    print(model_parameters)
+    for col in reversed(model_parameters):
+        metrics_history.insert(0, col, model_parameters[col])
+    # create folder to store the model fitting results
+    outp = output_path / f'best_configuration_model_fit_{i_model_fit}'
+    outp.mkdir(parents=True, exist_ok=True)
+    # plot and save the model convergence
+    task_names = list(dsets.keys())
+    plot_metrics_convergence(metrics_history, task_names=task_names, stages=['train', 'eval'],
+                             output=outp)
+    # save the model
+    torch.save(net, outp / 'model.pth')
+    # save the metrics history
+    metrics_history.to_excel(outp / 'metrics_history.xlsx', index=False)
 

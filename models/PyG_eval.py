@@ -123,7 +123,8 @@ def eval(mols: list[Chem.Mol],
 
     net.eval()
     predictions = []
-    for i_batch, batch in enumerate(prediction_loader):
+    i_mol_start = 0
+    for i_batch, batch in tqdm(enumerate(prediction_loader)):
         for i_task, task in enumerate(tasks):
             # pred = net(batch)
             pred = net(batch.x, batch.edge_index, batch.edge_attr, batch.batch, task_id=i_task)
@@ -131,6 +132,8 @@ def eval(mols: list[Chem.Mol],
                                 columns=['negative (probability)', 'positive (probality)'])
             pred['genotoxicity call'] = np.where(pred['positive (probality)'] >= 0.5, 'positive', 'negative')
             pred['task'] = task
+            pred['i mol'] = range(i_mol_start, i_mol_start + len(batch))
             predictions.append(pred)
+        i_mol_start = i_mol_start + len(batch)
     predictions = pd.concat(predictions, axis='index', ignore_index=True, sort=False)
     return predictions

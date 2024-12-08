@@ -72,15 +72,30 @@ genotoxicity_pesticides_efsa = pd.read_csv(r'data\QSARToolbox\raw\2024_06_22_gen
 micronucleus_issmic = pd.read_csv(r'data\QSARToolbox\raw\2024_06_22_micronucleus_issmic.csv', encoding='utf-16le', sep='\t', low_memory=False).assign(origin='2024_06_22_micronucleus_issmic.csv')
 micronucleus_oasis = pd.read_csv(r'data\QSARToolbox\raw\2024_06_22_micronucleus_oasis.csv', encoding='utf-16le', sep='\t', low_memory=False).assign(origin='2024_06_22_micronucleus_oasis.csv')
 transgenic_rodent_database = pd.read_csv(r'data\QSARToolbox\raw\2024_06_22_transgenic_rodent_database.csv', encoding='utf-16le', sep='\t', low_memory=False).assign(origin='2024_06_22_transgenic_rodent_database.csv')
-datasets = pd.concat([bacterial_mutagenicity_issty, genotoxicity_carcinogenicity_ecvam, genotoxicity_oasis, genotoxicity_pesticides_efsa, micronucleus_issmic, micronucleus_oasis, transgenic_rodent_database], axis=0, ignore_index=True, sort=False)
+
+# use only selected databases with in vitro data
+# - genotoxicity_pesticides_efsa
+# - genotoxicity_oasis
+# - micronucleus_oasis
+# datasets = pd.concat([bacterial_mutagenicity_issty, genotoxicity_carcinogenicity_ecvam, genotoxicity_oasis, genotoxicity_pesticides_efsa, micronucleus_issmic, micronucleus_oasis, transgenic_rodent_database], axis=0, ignore_index=True, sort=False)
+datasets = pd.concat([genotoxicity_pesticides_efsa, genotoxicity_oasis, micronucleus_oasis], axis=0, ignore_index=True, sort=False)
+datasets = datasets.drop_duplicates()
 
 # keep the required columns and rename them
 cols = ['CAS Number', 'SMILES', 'Database', 'Strain', 'Metabolic activation', 'Test organisms (species)',
-        'Endpoint', 'Type of method', 'Test type', 'Value.MeanValue', 'origin', 'Route of administration']
+        'Endpoint', 'Type of method', 'Test type', 'Value.MeanValue', 'origin',]
 datasets = datasets[cols].rename({'CAS Number': 'CAS number',
                                   'SMILES': 'smiles',
                                   'Value.MeanValue': 'genotoxicity',}, axis='columns')
 datasets = datasets.reset_index().rename({'index': 'source record ID'}, axis='columns')
+
+# set the unknown organism, strain and metabolic activation to unknown
+msk = datasets['Test organisms (species)']=='Undefined Test organisms (species)'
+datasets['Test organisms (species)'] = np.where(msk, 'unknown', datasets['Test organisms (species)'])
+msk = datasets['Strain'].isin(['No Strain Information', 'Undefined Strain'])
+datasets['Strain'] = np.where(msk, 'unknown', datasets['Strain'])
+msk = datasets['Metabolic activation'].isin(['Without S9', 'With S9', 'With or Without'])
+datasets['Metabolic activation'] = np.where(~msk, 'unknown', datasets['Metabolic activation'])
 
 # check the type of endpoints and test type
 stats = datasets.groupby(['Type of method', 'Endpoint', 'Test type', 'Test organisms (species)'], dropna=False)[['origin', 'CAS number']].agg(**{'origin': pd.NamedAgg(column='origin', aggfunc=lambda x: ';'.join(pd.Series(x).drop_duplicates().sort_values().to_list())),
@@ -101,6 +116,11 @@ datasets['genotoxicity'] = datasets['genotoxicity'].replace({'Negative': 'negati
                                                              'Positive': 'positive',
                                                              'Equivocal': 'ambiguous'})
 
+
+# check
+msk = (datasets['Test type']=='Bacterial Reverse Mutation Assay (e.g. Ames Test)') & (datasets['Test organisms (species)']=='unkown')
+datasets.loc[msk]['Database'].value_counts()
+
 # cast the genotoxicity data to the expected, flat format
 tox_data = []
 
@@ -109,7 +129,7 @@ assay = 'bacterial reverse mutation assay'
 endpoint = 'in vitro gene mutation study in bacteria'
 main_strains = ['TA 100', 'TA 98', 'TA 1535', 'TA 1537', 'TA 1538', 'TA 97', 'TA 102', 'TA 104']
 msk_keep = ((datasets['Test type'] == 'Bacterial Reverse Mutation Assay (e.g. Ames Test)')
-            & (datasets['Test organisms (species)'] == 'Salmonella typhimurium')
+            & (datasets['Test organisms (species)'].isin([ 'Salmonella typhimurium', 'Salmonella typhimurium and Escherichia Coli']))
             )
 log.info('processing bacterial reverse mutation assay, in vitro gene mutation study in bacteria, Salmonella typhimurium')
 log.info(f'{msk_keep.sum()} records processed, {(~msk_keep).sum()} records left')
@@ -172,7 +192,7 @@ assay = 'bacterial reverse mutation assay'
 endpoint = 'in vitro gene mutation study in bacteria'
 main_strains = ['WP2 Uvr A', 'WP2 Uvr A PKM 101', 'WP2']
 msk_keep = ((datasets['Test type'] == 'Bacterial Reverse Mutation Assay (e.g. Ames Test)')
-       & (datasets['Test organisms (species)'] == 'Escherichia coli')
+       & (datasets['Test organisms (species)'].isin([ 'Escherichia coli', 'Salmonella typhimurium and Escherichia Coli']))
        )
 log.info('processing bacterial reverse mutation assay, in vitro gene mutation study in bacteria, Escherichia coli')
 log.info(f'{msk_keep.sum()} records processed, {(~msk_keep).sum()} records left')

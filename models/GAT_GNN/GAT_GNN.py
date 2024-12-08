@@ -19,7 +19,7 @@ class GAT_GNN(torch.nn.Module):
                  n_lin_hidden: int,
                  dropout: float,
                  n_classes: [int],
-                 activation_function: Callable = torch.nn.functional.leaky_relu,
+                 activation_function: Callable = torch.nn.functional.leaky_relu
                  ):
         """
         Implements the GAT multitask classifier in PyTorch Geometric
