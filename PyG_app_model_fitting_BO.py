@@ -42,10 +42,12 @@ from optuna.storages import RetryFailedTrialCallback
 from models.metrics import plot_metrics_convergence
 
 # set the model architecture
-MODEL_NAME = 'MPNN_GNN' # name of the model, can be 'MPNN_GNN', 'AttentiveFP_GNN' or 'GAT_GNN'
+MODEL_NAME = 'GAT_GNN' # name of the model, can be 'MPNN_GNN', 'AttentiveFP_GNN' or 'GAT_GNN'
+STUDY_NAME = "GM" # name of the study in the Optuna sqlit database
 
 # location to store the results
-output_path = Path(rf'output/develop')/MODEL_NAME
+output_path = Path(rf'output/{MODEL_NAME}/{STUDY_NAME}')
+output_path = Path(r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_agg_GM_CA_MN\inference\ToxvalDB')
 output_path.mkdir(parents=True, exist_ok=True)
 
 
@@ -56,30 +58,35 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 flat_datasets = [
                 # r'data/Hansen_2009/tabular/Hansen_2009_genotoxicity.xlsx',
                 # r'data/Leadscope/tabular/Leadscope_genotoxicity.xlsx',
-                r'data/ECVAM_AmesNegative/tabular/ECVAM_Ames_negative_genotoxicity.xlsx',
-                r'data/ECVAM_AmesPositive/tabular/ECVAM_Ames_positive_genotoxicity.xlsx',
-                r'data/QSARChallengeProject/tabular/QSARChallengeProject.xlsx',
-                r'data/QSARToolbox/tabular/QSARToolbox_genotoxicity.xlsx',
-                r'data/REACH/tabular/REACH_genotoxicity.xlsx',
+                # r'data/ECVAM_AmesNegative/tabular/ECVAM_Ames_negative_genotoxicity.xlsx',
+                # r'data/ECVAM_AmesPositive/tabular/ECVAM_Ames_positive_genotoxicity.xlsx',
+                # r'data/QSARChallengeProject/tabular/QSARChallengeProject.xlsx',
+                # r'data/QSARToolbox/tabular/QSARToolbox_genotoxicity.xlsx',
+                # r'data/REACH/tabular/REACH_genotoxicity.xlsx',
+                # r'data/Baderna_2020/tabular/Baderna_2020_genotoxicity.xlsx',
+                # r'data/Morita_2019/tabular/Morita_2019_genotoxicity.xlsx',
+                # r'data/NTP_mammalian_mutagenics/tabular/NTP_mammalian_mutagenics.xlsx',
+                r'data/ToxvalDB/tabular/ToxvalDB_genotoxicity.xlsx'
+
 ]
 task_specifications = [
-     # {'filters': {'assay': ['bacterial reverse mutation assay'], 'cell line/species': ['Escherichia coli (WP2 Uvr A)',
-     #                                                                                   'Salmonella typhimurium (TA 102)',
-     #                                                                                   'Salmonella typhimurium (TA 100)',
-     #                                                                                   'Salmonella typhimurium (TA 1535)',
-     #                                                                                   'Salmonella typhimurium (TA 98)',
-     #                                                                                   'Salmonella typhimurium (TA 1537)'
-     #                                                                                   ], 'metabolic activation': ['yes', 'no']},
-     #  'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay', 'cell line/species', 'metabolic activation']},
+      # {'filters': {'assay': ['bacterial reverse mutation assay'], 'cell line/species': ['Escherichia coli (WP2 Uvr A)',
+      #                                                                                   # 'Salmonella typhimurium (TA 102)',
+      #                                                                                   'Salmonella typhimurium (TA 100)',
+      #                                                                                   'Salmonella typhimurium (TA 1535)',
+      #                                                                                   'Salmonella typhimurium (TA 98)',
+      #                                                                                   'Salmonella typhimurium (TA 1537)'
+      #                                                                                   ], 'metabolic activation': ['yes', 'no']},
+      #  'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay', 'cell line/species', 'metabolic activation']},
 
-    # {'filters': {'assay': ['bacterial reverse mutation assay']},
-    #  'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
-
-    {'filters': {'assay': ['in vitro mammalian cell micronucleus test']},
-      'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
-
-     {'filters': {'assay': ['in vitro mammalian chromosome aberration test']},
-      'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
+    #  {'filters': {'assay': ['bacterial reverse mutation assay']},
+    #   'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
+    #
+      {'filters': {'assay': ['in vitro mammalian cell micronucleus test']},
+        'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
+    # # #
+      {'filters': {'assay': ['in vitro mammalian chromosome aberration test']},
+       'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
 
     # {'filters': {'assay': ['in vitro mammalian cell gene mutation test using the Hprt and xprt genes']},
     #  'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
@@ -87,8 +94,8 @@ task_specifications = [
     # {'filters': {'assay': ['in vitro mammalian cell gene mutation test using the thymidine kinase gene']},
     #  'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
 
-    {'filters': {'endpoint': ['in vitro gene mutation study in mammalian cells']},
-     'task aggregation columns': ['in vitro/in vivo', 'endpoint']},
+     {'filters': {'endpoint': ['in vitro gene mutation study in mammalian cells']},
+      'task aggregation columns': ['in vitro/in vivo', 'endpoint']},
 
 ]
 # task_specifications = [
@@ -119,13 +126,12 @@ tasks = create_sdf(flat_datasets = flat_datasets,
 
 
 # set general parameters
-N_TRIALS = 2 # number of trials to be attempted by the Optuna optimiser
-STUDY_NAME = "develop_GAT" # name of the study in the Optuna sqlit database
+N_TRIALS = 200 # number of trials to be attempted by the Optuna optimiser
 PYTORCH_SEED = 2 # seed for PyTorch random number generator, it is also used for splits and shuffling to ensure reproducibility
 MINIMUM_TASK_DATASET = 300 # minimum number of data points for a task
-BATCH_SIZE_MAX = 1024 # maximum batch size (largest task, the smaller tasks are scaled accordingly so the number of batches is the same)
+BATCH_SIZE_MAX = 490 # maximum batch size (largest task, the smaller tasks are scaled accordingly so the number of batches is the same)
 K_FOLD = 5 # number of folds for the cross-validation
-MAX_NUM_EPOCHS = 2 # maximum number of epochs
+MAX_NUM_EPOCHS = 500 # maximum number of epochs
 SCALE_LOSS_TASK_SIZE = None # how to scale the loss function, can be 'equal task' or None
 SCALE_LOSS_CLASS_SIZE = 'equal class (task)' # how to scale the loss function, can be 'equal class (task)', 'equal class (global)' or None
 HANDLE_AMBIGUOUS = 'ignore' # how to handle ambiguous outcomes, can be 'keep', 'set_positive', 'set_negative' or 'ignore', but the model fitting does not support 'keep'
@@ -134,7 +140,7 @@ LOG_EPOCH_FREQUENCY = 10
 EARLY_STOPPING_LOSS_EVAL = 20
 EARLY_STOPPING_ROC_EVAL = 10
 EARLY_STOPPING_THRESHOLD = 1.e-3
-NUMBER_MODEL_FITS = 2  # number of model fits in each fold
+NUMBER_MODEL_FITS = 3  # number of model fits in each fold
 
 
 
@@ -429,12 +435,12 @@ def objective(trial) -> float:
                     log.info(msg)
                     return objective_function_value
 
-        # compute the objective function value as the mean for all folds and model fits
+        # compute the objective function value as the mean for all folds, taking the max for all model fits in the fold
         metrics_history_trial = pd.concat(metrics_history_trial, axis='index', sort=False, ignore_index=True)
         msk = (metrics_history_trial['type'] == 'aggregate (epoch)') & metrics_history_trial['task'].isnull() & (metrics_history_trial['stage'] == 'eval')
-        objective_function_value = metrics_history_trial.loc[msk].groupby(['model fit', 'fold'])['balanced accuracy'].max().mean()
+        objective_function_value = metrics_history_trial.loc[msk].groupby(['fold'])['balanced accuracy'].max().mean()
 
-        # set the metrics for each task for the evaluation set as a user attribute in the study
+        # set the metrics for each task for the evaluation set as a user attribute in the study (this is taken simply as the mean of the balanced accuracy for all model fits in the fold)
         for i_task, task in enumerate(dsets):
             ba_eval_task = []
             for i_fold in range(K_FOLD):
@@ -449,7 +455,7 @@ def objective(trial) -> float:
                            & (metrics_history_trial['type'] == 'aggregate (epoch)') & (metrics_history_trial['task'] == i_task) & (metrics_history_trial['stage'] == 'eval'))
                     ba_eval_task.append(metrics_history_trial.loc[msk, 'balanced accuracy'].iloc[0])
             ba_eval_task = pd.Series(ba_eval_task).mean()
-            trial.set_user_attr(f'BA {task}', ba_eval_task)
+            trial.set_user_attr(f'mean BA across folds/fits for {task}', ba_eval_task)
 
         return objective_function_value
 
@@ -474,10 +480,12 @@ study = optuna.create_study(
 )
 study.optimize(lambda trial: objective(trial), n_trials=N_TRIALS, n_jobs=1)
 
-# store the study for future analysis
+# store the study for future analysis (as pickle)
 with open(output_path/'study.pickle', 'wb') as f:
     pickle.dump(study, f)
-study.trials_dataframe()
+# store the study for future analysis (as dataframe)
+study.trials_dataframe().to_excel(output_path / 'study.xlsx', index=False)
+
 
 
 # refit the best model configuration to the whole training set, we do multiple fits and all are used for inference

@@ -16,6 +16,9 @@ import torch.nn.functional as F
 
 from rdkit.Chem import AllChem
 
+# set the device
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
 def eval(mols: list[Chem.Mol],
          net,
          tasks: list[str],
@@ -30,8 +33,6 @@ def eval(mols: list[Chem.Mol],
     :param fingerprint_parameters: dictionary with fingerprint paramters
     :return: pandas dataframe with the predictions
     '''
-
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     # set the fingerprint generator
     fpgen = AllChem.GetMorganGenerator(radius=fingerprint_parameters['radius'], fpSize=fingerprint_parameters['fpSize'],
@@ -58,16 +59,18 @@ def eval(mols: list[Chem.Mol],
     # create the dataset and the data loader
     dset = TensorDataset(torch.tensor(X))
     batch_size = 1024
-    dataloader = DataLoader(dset, batch_size=batch_size, shuffle=True, drop_last=False)
+    # .. we eneed to ensure that we do not suffle here
+    dataloader = DataLoader(dset, batch_size=batch_size, shuffle=False, drop_last=False)
 
     predictions = []
     i_mol_start = 0
     for i_batch, batch in enumerate(dataloader):
         for i_task, task in enumerate(tasks):
+            batch[0] = batch[0].to(device)
             pred = net(batch[0], task_id=i_task)
-            pred = pd.DataFrame(F.softmax(pred, dim=1).detach().numpy(),
-                                columns=['negative (probability)', 'positive (probality)'])
-            pred['genotoxicity call'] = np.where(pred['positive (probality)'] >= 0.5, 'positive', 'negative')
+            pred = pd.DataFrame(F.softmax(pred, dim=1).detach().cpu().numpy(),
+                                columns=['negative (probability)', 'positive (probability)'])
+            pred['genotoxicity call'] = np.where(pred['positive (probability)'] >= 0.5, 'positive', 'negative')
             pred['task'] = task
             pred['i mol'] = range(i_mol_start, i_mol_start + len(batch[0]))
             predictions.append(pred)

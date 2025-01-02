@@ -155,7 +155,18 @@ class AttentiveFP_GNN(torch.nn.Module):
             out_layer.reset_parameters()
 
     def forward(self, x: Tensor, edge_index: Tensor, edge_attr: Tensor,
-                batch: Tensor, task_id: int) -> Tensor:
+                batch: Tensor, task_id: int, embeddings: bool=False) -> Tensor:
+        '''
+
+        :param x:
+        :param edge_index:
+        :param edge_attr:
+        :param batch:
+        :param task_id:
+        :param embeddings: if True then the embeddings are returned, otherwise the logits
+        :return:
+        '''
+
         """"""  # noqa: D419
         # Atom Embedding:
         x = F.leaky_relu_(self.lin1(x))
@@ -183,10 +194,12 @@ class AttentiveFP_GNN(torch.nn.Module):
         # Predictor:
         out = F.dropout(out, p=self.dropout, training=self.training)
 
-        # apply the output layer (classification, produces logits)
-        out = self.out_layers[task_id](out)
-
-        return out
+        if embeddings:
+            return out
+        else:
+            # apply the output layer (classification, produces logits)
+            out = self.out_layers[task_id](out)
+            return out
 
     def __repr__(self) -> str:
         return (f'{self.__class__.__name__}('

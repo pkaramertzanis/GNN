@@ -52,7 +52,7 @@ from cheminformatics.rdkit_toolkit import Rdkit_operation
 # do not fold dataframes
 pd.set_option('expand_frame_repr',False)
 # maximum number of columns
-pd.set_option("display.max_columns",50)
+pd.set_option("display.max_columns",100)
 # maximum number of rows
 pd.set_option("display.max_rows",500)
 # precision of float numbers
@@ -72,13 +72,21 @@ genotoxicity_pesticides_efsa = pd.read_csv(r'data\QSARToolbox\raw\2024_06_22_gen
 micronucleus_issmic = pd.read_csv(r'data\QSARToolbox\raw\2024_06_22_micronucleus_issmic.csv', encoding='utf-16le', sep='\t', low_memory=False).assign(origin='2024_06_22_micronucleus_issmic.csv')
 micronucleus_oasis = pd.read_csv(r'data\QSARToolbox\raw\2024_06_22_micronucleus_oasis.csv', encoding='utf-16le', sep='\t', low_memory=False).assign(origin='2024_06_22_micronucleus_oasis.csv')
 transgenic_rodent_database = pd.read_csv(r'data\QSARToolbox\raw\2024_06_22_transgenic_rodent_database.csv', encoding='utf-16le', sep='\t', low_memory=False).assign(origin='2024_06_22_transgenic_rodent_database.csv')
+toxicity_japan_mhlw = pd.read_csv(r'data\QSARToolbox\raw\2024_06_22_toxicity_japan_mhlw.csv', encoding='utf-16le', sep='\t', low_memory=False).assign(origin='2024_06_22_toxicity_japan_mhlw.csv')
 
 # use only selected databases with in vitro data
 # - genotoxicity_pesticides_efsa
 # - genotoxicity_oasis
 # - micronucleus_oasis
-# datasets = pd.concat([bacterial_mutagenicity_issty, genotoxicity_carcinogenicity_ecvam, genotoxicity_oasis, genotoxicity_pesticides_efsa, micronucleus_issmic, micronucleus_oasis, transgenic_rodent_database], axis=0, ignore_index=True, sort=False)
-datasets = pd.concat([genotoxicity_pesticides_efsa, genotoxicity_oasis, micronucleus_oasis], axis=0, ignore_index=True, sort=False)
+# datasets = pd.concat([bacterial_mutagenicity_issty,
+#                       genotoxicity_carcinogenicity_ecvam,
+#                       genotoxicity_oasis,
+#                       genotoxicity_pesticides_efsa,
+#                       micronucleus_issmic,
+#                       micronucleus_oasis,
+#                       transgenic_rodent_database], axis=0, ignore_index=True, sort=False)
+datasets = pd.concat([genotoxicity_pesticides_efsa, genotoxicity_oasis, toxicity_japan_mhlw], axis=0, ignore_index=True, sort=False)
+# datasets = pd.concat([bacterial_mutagenicity_issty], axis=0, ignore_index=True, sort=False)
 datasets = datasets.drop_duplicates()
 
 # keep the required columns and rename them
@@ -116,10 +124,13 @@ datasets['genotoxicity'] = datasets['genotoxicity'].replace({'Negative': 'negati
                                                              'Positive': 'positive',
                                                              'Equivocal': 'ambiguous'})
 
+# check ------
+# msk = (datasets['smiles']=='NCCCNCCCN') & (datasets['Database']=='Genotoxicity OASIS') & (datasets['Test organisms (species)']=='Salmonella typhimurium') & (datasets['Strain']=='TA 100')
+# tmp = datasets.copy()
+# datasets = datasets.loc[msk]
+# check ------
 
-# check
-msk = (datasets['Test type']=='Bacterial Reverse Mutation Assay (e.g. Ames Test)') & (datasets['Test organisms (species)']=='unkown')
-datasets.loc[msk]['Database'].value_counts()
+
 
 # cast the genotoxicity data to the expected, flat format
 tox_data = []
@@ -180,6 +191,7 @@ for idx, datapoint in datasets.loc[msk_keep].iterrows():
     elif datapoint['Metabolic activation'] == 'With or Without':
         entry['metabolic activation'] = 'yes'
         tox_data.append(entry)
+        entry = entry.copy()
         entry['metabolic activation'] = 'no'
         tox_data.append(entry)
     else:
@@ -231,6 +243,7 @@ for idx, datapoint in datasets.loc[msk_keep].iterrows():
     elif datapoint['Metabolic activation'] == 'With or Without':
         entry['metabolic activation'] = 'yes'
         tox_data.append(entry)
+        entry = entry.copy()
         entry['metabolic activation'] = 'no'
         tox_data.append(entry)
     else:
@@ -281,6 +294,7 @@ for idx, datapoint in datasets.loc[msk_keep].iterrows():
     elif datapoint['Metabolic activation'] == 'With or Without':
         entry['metabolic activation'] = 'yes'
         tox_data.append(entry)
+        entry = entry.copy()
         entry['metabolic activation'] = 'no'
         tox_data.append(entry)
     else:
@@ -329,6 +343,7 @@ for idx, datapoint in datasets.loc[msk_keep].iterrows():
     elif datapoint['Metabolic activation'] == 'With or Without':
         entry['metabolic activation'] = 'yes'
         tox_data.append(entry)
+        entry = entry.copy()
         entry['metabolic activation'] = 'no'
         tox_data.append(entry)
     else:
@@ -378,6 +393,7 @@ for idx, datapoint in datasets.loc[msk_keep].iterrows():
     elif datapoint['Metabolic activation'] == 'With or Without':
         entry['metabolic activation'] = 'yes'
         tox_data.append(entry)
+        entry = entry.copy()
         entry['metabolic activation'] = 'no'
         tox_data.append(entry)
     else:

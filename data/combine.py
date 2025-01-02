@@ -70,7 +70,7 @@ def process_smiles(smiles: str,
 
      This utility function is used for both preparing the training/test set but also for using the developed models.
 
-     In case the smiles cannot be processed or if it is not suitable for modelling the function will return None, None, and a string
+     In case the smiles cannot be processed or if it is not suitable for modelling the function will return a tuple with None, None, and a string
      with the errors from the first operation that failed to produce a structure.
 
     :param smiles: input smiles string
@@ -241,7 +241,6 @@ def create_sdf(flat_datasets: list,
         aggregated_dataset['task aggregation'] = aggregated_dataset[task_aggregation_cols].apply(lambda row: ', '.join(row.index), axis='columns')
         aggregated_dataset['task'] = aggregated_dataset[task_aggregation_cols].apply(lambda row: ', '.join(row.to_list()), axis='columns')
         aggregated_dataset = aggregated_dataset.drop(task_aggregation_cols, axis='columns')
-
 
         aggregated_datasets.append(aggregated_dataset)
 

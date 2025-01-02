@@ -15,10 +15,6 @@ import numpy as np
 import json
 import re
 
-import requests
-from tqdm import tqdm
-from itertools import chain
-
 # pandas display options
 # do not fold dataframes
 pd.set_option('expand_frame_repr',False)

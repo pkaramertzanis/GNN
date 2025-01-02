@@ -16,6 +16,8 @@ from tqdm import tqdm
 from cheminformatics.rdkit_toolkit import get_adjacency_info, get_node_features, get_edge_features
 import torch.nn.functional as F
 
+# set the device
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 def eval(mols: list[Chem.Mol],
          net,
@@ -23,7 +25,8 @@ def eval(mols: list[Chem.Mol],
          node_feats: list[str],
          edge_feats: list[str],
          node_feature_names: list[str],
-         edge_attr_names: list[str]) -> pd.DataFrame:
+         edge_attr_names: list[str],
+         embeddings: bool = False) -> pd.DataFrame:
     '''
     Generate predictions for a list of molecules using a trained model. This function does not examine if
     the molecules are suitable for running the model. It also does not standardise the molecular structures. These
@@ -38,7 +41,8 @@ def eval(mols: list[Chem.Mol],
     :param edge_feats: list of edge features to generate
     :param node_feature_names: column names in the node feature matrix for the molecules in the training set
     :param edge_attr_names: column names in edge feature matrix for the molecules in the training set
-    :return: pandas dataframe with the predictions
+    :param embeddings: if True then the embeddings are returned, otherwise the genotoxicity positive and negative probabilities
+    :return: pandas dataframe with the predictions or embeddings
     '''
     # collect the adjacency information, the node features, the edge features and the assay_results
     adjacency_info = []
@@ -122,18 +126,35 @@ def eval(mols: list[Chem.Mol],
     prediction_loader = DataLoader(data_list, batch_size=batch_size, shuffle=False, drop_last=False)
 
     net.eval()
-    predictions = []
-    i_mol_start = 0
-    for i_batch, batch in tqdm(enumerate(prediction_loader)):
-        for i_task, task in enumerate(tasks):
-            # pred = net(batch)
-            pred = net(batch.x, batch.edge_index, batch.edge_attr, batch.batch, task_id=i_task)
-            pred = pd.DataFrame(F.softmax(pred, dim=1).detach().numpy(),
-                                columns=['negative (probability)', 'positive (probality)'])
-            pred['genotoxicity call'] = np.where(pred['positive (probality)'] >= 0.5, 'positive', 'negative')
-            pred['task'] = task
-            pred['i mol'] = range(i_mol_start, i_mol_start + len(batch))
-            predictions.append(pred)
-        i_mol_start = i_mol_start + len(batch)
-    predictions = pd.concat(predictions, axis='index', ignore_index=True, sort=False)
-    return predictions
+
+    if not embeddings:
+        # generate genotoxocity positive and negative probabilities for each task
+        predictions = []
+        i_mol_start = 0
+        for i_batch, batch in tqdm(enumerate(prediction_loader)):
+            batch.to(device)
+            for i_task, task in enumerate(tasks):
+                # pred = net(batch)
+                pred = net(batch.x, batch.edge_index, batch.edge_attr, batch.batch, task_id=i_task)
+                pred = pd.DataFrame(F.softmax(pred, dim=1).detach().cpu().numpy(),
+                                    columns=['negative (probability)', 'positive (probability)'])
+                pred['genotoxicity call'] = np.where(pred['positive (probability)'] >= 0.5, 'positive', 'negative')
+                pred['task'] = task
+                pred['i mol'] = range(i_mol_start, i_mol_start + len(batch))
+                predictions.append(pred)
+            i_mol_start = i_mol_start + len(batch)
+        predictions = pd.concat(predictions, axis='index', ignore_index=True, sort=False)
+        return predictions
+    else:
+        # generate embeddings for each molecule
+        embeddings = []
+        i_mol_start = 0
+        for i_batch, batch in tqdm(enumerate(prediction_loader)):
+            batch.to(device)
+            embedding = net(batch.x, batch.edge_index, batch.edge_attr, batch.batch, task_id=0, embeddings=True)
+            embedding = pd.DataFrame(embedding.detach().cpu().numpy(), columns=[f'embedding_{i}' for i in range(embedding.shape[1])])
+            embedding['i mol'] = range(i_mol_start, i_mol_start + len(batch))
+            embeddings.append(embedding)
+            i_mol_start = i_mol_start + len(batch)
+        embeddings = pd.concat(embeddings, axis='index', sort=False, ignore_index=True)
+        return embeddings

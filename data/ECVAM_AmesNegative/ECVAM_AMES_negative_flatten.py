@@ -32,12 +32,9 @@ log = logger.setup_applevel_logger(file_name ='logs/ECVAM_AMES_negative_flatten.
 
 from pathlib import Path
 import pandas as pd
-import numpy as np
 import json
 
-import requests
-from tqdm import tqdm
-from itertools import chain
+from cheminformatics.DSStox_structure_retrieval import retrieve_structure
 
 # pandas display options
 # do not fold dataframes
@@ -70,36 +67,10 @@ datasets = datasets.reset_index(drop=True)
 # extract the CAS numbers
 tmp = datasets['CAS number'].str.extractall(r'(\d{2,7}-\d{2}-\d)').reset_index()
 tmp = tmp.dropna().rename({'level_0': 'index', 'match': 'CAS number index',0: 'CAS number'}, axis='columns')
-# ..convert the IUPAC names, CAS names and CAS numbers to DSSTox structures
+# ..convert the CAS numbers to DSSTox structures
 identifiers = tmp['CAS number'].to_list()
-batch_size = 50
-headers = {
-    "accept": "application/json",
-    "x-api-key": "d03153d7-30f9-45e7-940e-cb7050e9430e"
-}
-ccte_data = []
-for i in tqdm(range(0, len(identifiers), batch_size)):
-    try:
-        # we attempt to run in a batch, but we raise an exception if the number of
-        # responses does not equal the number of input identifiers
-        identifiers_batch = identifiers[i:i + batch_size]
-        ccd = f"https://api-ccte.epa.gov/chemical/search/equal/"
-        response = requests.post(ccd, headers=headers, data='\n'.join(identifiers_batch))
-        response = pd.DataFrame.from_records(response.json())
-        if len(response) == len(identifiers_batch):
-            ccte_data.append(response.assign(identifier=identifiers_batch))
-        else:
-            ex = Exception(f'batch {i}-{i + batch_size-1} returned {len(response)} records instead of the expected {len(identifiers_batch)}')
-            log.error(ex)
-            raise ex
-    except:
-        log.info('will submit batch record per record')
-        response = []
-        for identifier in identifiers_batch:
-            response.append(requests.post(ccd, headers=headers, data=identifier).json())
-        ccte_data.append(pd.DataFrame.from_records(chain.from_iterable(response)).assign(identifier=identifiers_batch))
-ccte_data = pd.concat(ccte_data, axis='index', ignore_index=True, sort=False)
-tmp = tmp.merge(ccte_data, left_on='CAS number', right_on='identifier', how='inner')
+dsstox_data = retrieve_structure(identifiers)
+tmp = tmp.merge(dsstox_data, left_on='CAS number', right_on='identifier', how='inner')
 tmp = tmp[['index', 'CAS number', 'smiles', 'preferredName']]
 tmp = tmp.dropna().drop_duplicates().rename({'preferredName': 'substance name'}, axis='columns')
 datasets = datasets.drop('CAS number', axis='columns').merge(tmp, left_index=True, right_on='index', how='inner')

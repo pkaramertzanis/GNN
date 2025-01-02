@@ -78,16 +78,21 @@ def visualise_database_concordance(outp_tab: Path, output_path: Path) -> None:
             ax1.text(bar.get_x() + bar.get_width() / 2.0, height, f'{bar.get_height():d}', ha='center', va='bottom', fontsize=7, rotation=90)
             # set the colour
             is_conflicting = tmp.iloc[:, i_col]['conflicting genotoxicity'] == 'yes'
-            is_positive = tmp.iloc[:, i_col].isin(['+']).any()
-            only_ambiguous = tmp.iloc[:, i_col].isin(['A']).any() and not tmp.iloc[:, i_col].isin(['+', '-']).sum()
-            if not is_conflicting and is_positive:
+            all_positive = (tmp.iloc[:, i_col].isin(['+']).sum()>0) & (tmp.iloc[:, i_col].isin(['-', 'A']).sum()==0)
+            all_negative = (tmp.iloc[:, i_col].isin(['-']).sum()>0) & (tmp.iloc[:, i_col].isin(['+', 'A']).sum()==0)
+            all_ambiguous = (tmp.iloc[:, i_col].isin(['A']).sum()>0) & (tmp.iloc[:, i_col].isin(['+', '-']).sum()==0)
+            if all_positive:
+                # all positive
                 bar.set_color('#e28743')
-            elif only_ambiguous:
+            elif all_ambiguous:
+                # all ambiguous
                 bar.set_color('w')
                 bar.set_edgecolor('k')
-            elif not is_conflicting and not is_positive:
+            elif all_negative:
+                # all negative
                 bar.set_color('#1e81b0')
             else:
+                # conflicting
                 bar.set_color('#babbbb')
 
         # create table with genotoxicity outcomes in the middle subplot
