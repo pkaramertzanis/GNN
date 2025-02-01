@@ -60,11 +60,10 @@ from tqdm import tqdm
 
 # set the model architecture
 MODEL_NAME = 'FFNN'
-STUDY_NAME = "Ames_5_strains" # name of the study in the Optuna sqlit database
+STUDY_NAME = "GM_no_scaling" # name of the study in the Optuna sqlit database
 
 # location to store the results
 output_path = Path(rf'output/{MODEL_NAME}/{STUDY_NAME}')
-# output_path = Path(r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP\Ames_agg_GM_CA_MN\inference\baderna_2020\training_eval_dataset')
 output_path.mkdir(parents=True, exist_ok=True)
 
 # set the device
@@ -82,25 +81,26 @@ flat_datasets = [
                 # r'data/Baderna_2020/tabular/Baderna_2020_genotoxicity.xlsx',
 ]
 task_specifications = [
-       {'filters': {'assay': ['bacterial reverse mutation assay'], 'cell line/species': ['Escherichia coli (WP2 Uvr A)',
-                                                                                         # 'Salmonella typhimurium (TA 102)',
-                                                                                          'Salmonella typhimurium (TA 100)',
-                                                                                          'Salmonella typhimurium (TA 1535)',
-                                                                                         'Salmonella typhimurium (TA 98)',
-                                                                                          'Salmonella typhimurium (TA 1537)'
-                                                                                         ], 'metabolic activation': ['yes',
-                                                                                                                      'no'
-                                                                                                                     ]},
-        'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay', 'cell line/species', 'metabolic activation']},
+        #  {'filters': {'assay': ['bacterial reverse mutation assay'], 'cell line/species': [
+        #      'Escherichia coli (WP2 Uvr A)',
+        #      # 'Salmonella typhimurium (TA 102)',
+        #      # 'Salmonella typhimurium (TA 100)',
+        #      #  'Salmonella typhimurium (TA 1535)',
+        #       # 'Salmonella typhimurium (TA 98)',
+        #      # 'Salmonella typhimurium (TA 1537)'
+        #                                                                                   ], 'metabolic activation': [
+        #       # 'yes',
+        #       'no'
+        # ]}, 'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay', 'cell line/species', 'metabolic activation']},
 
      # {'filters': {'assay': ['bacterial reverse mutation assay']},
      #  'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
 
-      # {'filters': {'assay': ['in vitro mammalian cell micronucleus test']},
-      #  'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
-    #
-     # {'filters': {'assay': ['in vitro mammalian chromosome aberration test']},
-     #  'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
+       # {'filters': {'assay': ['in vitro mammalian cell micronucleus test']},
+       #  'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
+    # #
+    #    {'filters': {'assay': ['in vitro mammalian chromosome aberration test']},
+    #     'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
 
     # {'filters': {'assay': ['in vitro mammalian cell gene mutation test using the Hprt and xprt genes']},
     #  'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
@@ -108,8 +108,8 @@ task_specifications = [
     # {'filters': {'assay': ['in vitro mammalian cell gene mutation test using the thymidine kinase gene']},
     #  'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
 
-      # {'filters': {'endpoint': ['in vitro gene mutation study in mammalian cells']},
-      #  'task aggregation columns': ['in vitro/in vivo', 'endpoint']},
+  {'filters': {'endpoint': ['in vitro gene mutation study in mammalian cells']},
+   'task aggregation columns': ['in vitro/in vivo', 'endpoint']},
 
 ]
 # task_specifications = [
@@ -142,11 +142,11 @@ tasks = create_sdf(flat_datasets = flat_datasets,
 N_TRIALS = 200 # number of trials to be attempted by the Optuna optimiser
 PYTORCH_SEED = 2 # seed for PyTorch random number generator, it is also used for splits and shuffling to ensure reproducibility
 MINIMUM_TASK_DATASET = 300 # minimum number of data points for a task
-BATCH_SIZE_MAX = 1024 # maximum batch size (largest task, the smaller tasks are scaled accordingly so the number of batches is the same)
+BATCH_SIZE_MAX = 990 # maximum batch size (largest task, the smaller tasks are scaled accordingly so the number of batches is the same)
 K_FOLD = 5 # number of folds for the cross-validation
 MAX_NUM_EPOCHS = 500 # maximum number of epochs
 SCALE_LOSS_TASK_SIZE = None # how to scale the loss function, can be 'equal task' or None
-SCALE_LOSS_CLASS_SIZE = 'equal class (task)' # how to scale the loss function, can be 'equal class (task)', 'equal class (global)' or None
+SCALE_LOSS_CLASS_SIZE = 'equal class (task)' # 'equal class (task)' # how to scale the loss function, can be 'equal class (task)', 'equal class (global)' or None
 HANDLE_AMBIGUOUS = 'ignore' # how to handle ambiguous outcomes, can be 'keep', 'set_positive', 'set_negative' or 'ignore', but the model fitting does not support 'keep'
 DROP_LAST_TRAINING = True # we can drop the last to have stable gradients and possibly NAN loss function due to lack of positives
 LOG_EPOCH_FREQUENCY = 10
@@ -469,6 +469,18 @@ with open(output_path/'study.pickle', 'rb') as f:
 study.trials_dataframe()
 # .. find the optimal model configuration
 best_trial = study.best_trial
+# .. find the optimal epoch for each model fit
+model_fits = list(output_path.glob(f'trial_{best_trial.number}_fold_*_model_fit_*'))
+optimal_epochs = []
+for model_fit in model_fits:
+    metrics = pd.read_excel(model_fit / 'metrics_history.xlsx')
+    msk = (metrics['type'] == 'aggregate (epoch)') & metrics['task'].isnull() & (metrics['stage'] == 'eval')
+    idx = metrics.loc[msk, 'balanced accuracy'].idxmax()
+    optimal_epoch = metrics.loc[idx, 'epoch']
+    optimal_epochs.append(optimal_epoch)
+optimal_epoch = max(optimal_epochs)
+log.info(f'final model fitting will be terminated at epoch {optimal_epoch}')
+MAX_NUM_EPOCHS = optimal_epoch
 model_parameters = dict()
 for parameter in hyperparameters['model parameters']:
     # model_parameters[parameter.name] = getattr(trial, parameter.type)(parameter.name, parameter.lower_bound, parameter.upper_bound, log=parameter.log)
@@ -542,7 +554,7 @@ for i_model_fit in range(NUMBER_MODEL_FITS):
     for col in reversed(model_parameters):
         metrics_history.insert(0, col, model_parameters[col])
     # create folder to store the model fitting results
-    outp = output_path / f'best_configuration_model_fit_{i_model_fit}'
+    outp = output_path / f'best_configuration_model_fit_early_stopping_{i_model_fit}'
     outp.mkdir(parents=True, exist_ok=True)
     # plot and save the model convergence
     task_names = list(dsets.keys())

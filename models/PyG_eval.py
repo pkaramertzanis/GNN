@@ -134,8 +134,8 @@ def eval(mols: list[Chem.Mol],
         for i_batch, batch in tqdm(enumerate(prediction_loader)):
             batch.to(device)
             for i_task, task in enumerate(tasks):
-                # pred = net(batch)
-                pred = net(batch.x, batch.edge_index, batch.edge_attr, batch.batch, task_id=i_task)
+                with torch.no_grad():
+                    pred = net(batch.x, batch.edge_index, batch.edge_attr, batch.batch, task_id=i_task)
                 pred = pd.DataFrame(F.softmax(pred, dim=1).detach().cpu().numpy(),
                                     columns=['negative (probability)', 'positive (probability)'])
                 pred['genotoxicity call'] = np.where(pred['positive (probability)'] >= 0.5, 'positive', 'negative')
@@ -151,7 +151,8 @@ def eval(mols: list[Chem.Mol],
         i_mol_start = 0
         for i_batch, batch in tqdm(enumerate(prediction_loader)):
             batch.to(device)
-            embedding = net(batch.x, batch.edge_index, batch.edge_attr, batch.batch, task_id=0, embeddings=True)
+            with torch.no_grad():
+                embedding = net(batch.x, batch.edge_index, batch.edge_attr, batch.batch, task_id=0, embeddings=True)
             embedding = pd.DataFrame(embedding.detach().cpu().numpy(), columns=[f'embedding_{i}' for i in range(embedding.shape[1])])
             embedding['i mol'] = range(i_mol_start, i_mol_start + len(batch))
             embeddings.append(embedding)

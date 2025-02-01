@@ -21,7 +21,7 @@ class MPNN_GNN(torch.nn.Module):
                  activation_function: Callable = torch.nn.functional.leaky_relu
                  ):
         """
-        Implements the GCN multitask classifier in PyTorch Geometric
+        Implements the GCN_GNN multitask classifier in PyTorch Geometric
         :param num_node_features: number of node features
         :param num_edge_features: number of edge features
         :param n_conv: number of convolutional layers
@@ -81,21 +81,6 @@ class MPNN_GNN(torch.nn.Module):
 
         # dropout layer
         self.dropout = torch.nn.Dropout(dropout)
-
-
-        # initialise the weights and biases of the output layers, the other modules are initialised by the GAT model
-        # for output_layer in self.out_layers:
-        #     torch.nn.init.xavier_uniform_(output_layer.weight)
-        #     torch.nn.init.constant_(output_layer.bias, 0.)
-        # initialise the weights and biases
-        # for name, param in self.named_parameters():
-        #     if 'weight' in name:
-        #         torch.nn.init.xavier_uniform_(param)
-        #     if 'bias' in name:
-        #         torch.nn.init.constant_(param, 0.)
-
-    # def forward(self, data):
-    #     batch, x, edge_index, edge_attr = data.batch, data.x, data.edge_index, data.edge_attr
 
     def forward(self, x: torch.Tensor, edge_index: torch.Tensor, edge_attr: torch.Tensor, batch: torch.Tensor, task_id: int):
 

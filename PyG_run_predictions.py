@@ -32,7 +32,9 @@ pd.options.mode.copy_on_write = True
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 # structures to run predictions for
-structures_smiles = r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_agg_GM_CA_MN\inference\ToxvalDB\training_eval_dataset\tabular/genotoxicity_dataset.xlsx'
+# structures_smiles = r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_agg_GM_CA_MN\training_eval_dataset\tabular/genotoxicity_dataset.xlsx'
+# structures_smiles = r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_agg_GM_CA_MN\inference\bacterial_mutagenicity_issty_agg\training_eval_dataset\tabular/genotoxicity_dataset.xlsx'
+structures_smiles = r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_5_strains\inference\bacterial_mutagenicity_issty\training_eval_dataset\tabular/genotoxicity_dataset.xlsx'
 structures = pd.read_excel(structures_smiles, usecols=['smiles_std']).dropna().drop_duplicates().rename({'smiles_std': 'smiles'}, axis='columns').reset_index() # this is a dataframe with a single smiles column
 # structures = pd.DataFrame({'smiles': ['N#CO', 'CCC']})
 # .. append the standardised smiles and mol objects, only valid structures that can be predicted will be kept
@@ -42,7 +44,8 @@ mols = structures['mol'].dropna().drop_duplicates().to_list()
 
 
 # model fit folder
-output_path = Path(r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_agg_GM_CA_MN')
+output_path = Path(fr'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_5_strains')
+stopping = 'early_stopping'
 
 # load the node and edge features, feature values and tasks
 with (open(output_path / 'feature_task_info.json', 'r') as f):
@@ -54,7 +57,7 @@ with (open(output_path / 'feature_task_info.json', 'r') as f):
                                                                           all_features_tasks['tasks'])
 
 # run inference with all final fitted models (predictions)
-model_paths = list((output_path).glob(r'best_configuration_model_fit_*/model.pth'))
+model_paths = list((output_path).glob(fr'best_configuration_model_fit_{stopping}_*/model.pth'))
 all_predictions = []
 for i_model, model_path in enumerate(model_paths):
     log.info(f'generating predictions for model: {i_model}')
@@ -67,7 +70,7 @@ for i_model, model_path in enumerate(model_paths):
     all_predictions.append(predictions)
 all_predictions = pd.concat(all_predictions, axis='index', sort=False, ignore_index=True)
 all_predictions = structures.merge(all_predictions, on='i mol', how='inner')
-all_predictions.to_pickle(r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_agg_GM_CA_MN/inference/ToxvalDB\predictions.pickle')
+all_predictions.to_pickle(fr'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_5_strains/inference/bacterial_mutagenicity_issty\predictions_{stopping}.pickle')
 
 # run inference with all final fitted models (embeddings)
 all_embeddings = []
@@ -82,7 +85,7 @@ for i_model, model_path in enumerate(model_paths):
     all_embeddings.append(embeddings)
 all_embeddings = pd.concat(all_embeddings, axis='index', sort=False, ignore_index=True)
 all_embeddings = structures.merge(all_embeddings, on='i mol', how='inner')
-all_embeddings.to_pickle(r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP\GM\inference\leadscope\embeddings.pickle')
+all_embeddings.to_pickle(fr'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_5_strains/inference/bacterial_mutagenicity_issty\embeddings_{stopping}.pickle')
 
 
 

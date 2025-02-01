@@ -67,7 +67,8 @@ def eval(mols: list[Chem.Mol],
     for i_batch, batch in enumerate(dataloader):
         for i_task, task in enumerate(tasks):
             batch[0] = batch[0].to(device)
-            pred = net(batch[0], task_id=i_task)
+            with torch.no_grad():
+                pred = net(batch[0], task_id=i_task)
             pred = pd.DataFrame(F.softmax(pred, dim=1).detach().cpu().numpy(),
                                 columns=['negative (probability)', 'positive (probability)'])
             pred['genotoxicity call'] = np.where(pred['positive (probability)'] >= 0.5, 'positive', 'negative')

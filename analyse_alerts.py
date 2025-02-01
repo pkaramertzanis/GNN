@@ -19,9 +19,16 @@ import math
 import pickle
 
 import matplotlib
-matplotlib.use('Tkagg')
+# matplotlib.use('Tkagg')
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import StandardScaler
+
+from scipy.stats import fisher_exact
+
+from rdkit import Chem
+from rdkit.Chem import Draw
+from rdkit.Chem import rdDepictor
+
 
 # pandas display options
 # do not fold dataframes
@@ -39,25 +46,28 @@ pd.set_option("max_colwidth", 250)
 pd.options.mode.copy_on_write = True
 
 
+
+
+
 # UMAP of embeddings for the Ames_agg_GM_CA_MN AttentiveFP model
 import matplotlib.pyplot as plt
 import seaborn as sns
 import umap
 # datamap plot, https://github.com/TutteInstitute/datamapplot
-output_path = Path(r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP\Ames_agg_GM_CA_MN')
-predictions = pd.read_pickle(output_path/'inference/training_set/training_set_predictions.pickle')
+output_path = Path(r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_agg_GM_CA_MN')
+predictions = pd.read_pickle(output_path/'inference/training_set/predictions_early_stopping.pickle')
 tasks = predictions['task'].unique().tolist()
-embeddings = pd.read_pickle(output_path/'inference/training_set/training_set_embeddings.pickle')
+embeddings = pd.read_pickle(output_path/'inference/training_set/embeddings_early_stopping.pickle')
 exp_data = pd.read_excel(output_path/r'training_eval_dataset\tabular\genotoxicity_dataset.xlsx')
 # .. concetenate the embeddings of the different models
-embeddings['i model'] = embeddings['model'].str.extract(r'best_configuration_model_fit_(\d+)')
+embeddings['i model'] = embeddings['model'].str.extract(r'best_configuration_model_fit_early_stopping_(\d+)')
 emb_cols = [col for col in embeddings.columns if col.startswith('embedding')]
 embeddings = embeddings.pivot(index=['i mol', 'smiles', 'smiles_std'], columns=['i model'], values=emb_cols)
 # combine the two column levels
 embeddings.columns = [f'{col[0]} (model {col[1]})' for col in embeddings.columns]
 embeddings = embeddings.reset_index()
 # .. combine the model predictions (take the probability mean from all model fits)
-predictions['i model'] = predictions['model'].str.extract(r'best_configuration_model_fit_(\d+)')
+predictions['i model'] = predictions['model'].str.extract(r'best_configuration_model_fit_early_stopping_(\d+)')
 predictions = predictions.pivot_table(index=['i mol', 'smiles', 'smiles_std'], columns=['task'], values=['positive (probability)'], aggfunc='mean')
 predictions.columns = [col[1] for col in predictions.columns]
 predictions = predictions.reset_index()
@@ -74,7 +84,7 @@ reduced_embeddings = pd.concat([embeddings[['i mol', 'smiles', 'smiles_std']], r
 # from rdkit import Chem
 # smarts = r'[$([CX4]1[OX2][CX4]1),$([#6]1=[#6][#8]1)]'
 # structures['epoxide'] = structures['mol'].apply(lambda mol: mol.HasSubstructMatch(Chem.MolFromSmarts(smarts)))
-fig = plt.figure(figsize=(8, 8))
+fig = plt.figure(figsize=(8, 6))
 axs = fig.subplots(2, 2)
 axs = axs.flatten()
 for i_task, task in enumerate(tasks):
@@ -155,12 +165,12 @@ for i_task, task in enumerate(tasks):
         legend_handles = [pred_pos, pred_neg, pred_equiv, exp_pos, exp_neg]
         legend_labels = ['predicted positive', 'predicted negative', 'predicted equivocal', 'exp. positive', 'exp. negative']
         axs[i_task].legend(legend_handles, legend_labels, loc='center', bbox_to_anchor=(1.15, -.25), fontsize=8, frameon=False, markerscale=3)
-fig.savefig(r'D:\myApplications\local\2024_01_21_GCN_Muta\output\\umap_AMES_agg_GM_CA_MN.png', dpi=600, bbox_inches='tight')
+fig.savefig(r'D:\myApplications\local\2024_01_21_GCN_Muta\output\umap_AMES_agg_GM_CA_MN_early_stopping.png', dpi=600, bbox_inches='tight')
 
 
-# put together predictions for AMes_agg_GM_CA_MN, experimental data, Grace's alerts, Derek alerts, QSAR Toolbox profilers
+# put together predictions for Ames_agg_GM_CA_MN, experimental data, Grace's alerts, Derek alerts, QSAR Toolbox profilers
 from rdkit import Chem
-exp_data_training_path = r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP\Ames_agg_GM_CA_MN\training_eval_dataset\tabular\genotoxicity_dataset.xlsx'
+exp_data_training_path = r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_agg_GM_CA_MN\training_eval_dataset\tabular\genotoxicity_dataset.xlsx'
 exp_data_training = pd.read_excel(exp_data_training_path)
 exp_data_training = exp_data_training.pivot(index='smiles_std', columns='task', values='genotoxicity').reset_index()
 exp_data_training = exp_data_training.rename({'in vitro, in vitro gene mutation study in bacteria, bacterial reverse mutation assay': 'Ames (experimental)',
@@ -169,7 +179,7 @@ exp_data_training = exp_data_training.rename({'in vitro, in vitro gene mutation 
                                   'in vitro, in vitro micronucleus study, in vitro mammalian cell micronucleus test': 'MN (experimental)'}, axis='columns')
 res = exp_data_training.copy()
 # .. add the predictions
-predictions_path = r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP\Ames_agg_GM_CA_MN\inference\training_set\training_set_predictions.pickle'
+predictions_path = r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_agg_GM_CA_MN\inference\training_set\predictions_early_stopping.pickle'
 predictions = pd.read_pickle(predictions_path)
 predictions = predictions.pivot_table(index=['smiles'], columns='task', values='positive (probability)', aggfunc='mean').reset_index()
 predictions = predictions.rename({'in vitro, in vitro gene mutation study in bacteria, bacterial reverse mutation assay': 'Ames (positive probability)',
@@ -190,7 +200,7 @@ for idx, row in alerts.iterrows():
     alerts_results[f"structural alert {row['Name']}"] = msk
 res = res.merge(alerts_results.drop('mol', axis='columns'), on='smiles_std', how='inner')
 # .. add Derek alerts
-derek_predictions = pd.read_parquet(r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP\Ames_agg_GM_CA_MN\inference\alerts_profilers/derek_predictions.parquet')
+derek_predictions = pd.read_parquet(r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_agg_GM_CA_MN\inference\alerts_profilers/derek_predictions.parquet')
 derek_predictions = derek_predictions.drop('components_tautomers', axis='columns').explode(column='Derek predictions')
 derek_predictions= derek_predictions.rename({'prediction status': 'Derek prediction status'}, axis='columns')
 derek_predictions = pd.concat([derek_predictions.drop('Derek predictions', axis='columns').reset_index(drop=True), pd.json_normalize(derek_predictions['Derek predictions']).reset_index(drop=True)], axis='columns', sort=False, ignore_index=False)
@@ -203,8 +213,8 @@ tmp = tmp.reset_index()
 derek_predictions = derek_predictions[['smiles_std', 'Derek prediction status']].drop_duplicates().merge(tmp, on='smiles_std', how='left')
 res = res.merge(derek_predictions, on='smiles_std', how='inner')
 # .. add Toolbox alerts
-toolbox_profilers =  pd.read_parquet(r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP\Ames_agg_GM_CA_MN\inference\alerts_profilers/profilers.parquet')
-toolbox_predictions = pd.read_parquet(r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP\Ames_agg_GM_CA_MN\inference\alerts_profilers/profiling_results.parquet')
+toolbox_profilers =  pd.read_parquet(r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_agg_GM_CA_MN\inference\alerts_profilers/profilers.parquet')
+toolbox_predictions = pd.read_parquet(r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_agg_GM_CA_MN\inference\alerts_profilers/profiling_results.parquet')
 toolbox_predictions = toolbox_predictions.explode(column='alerts')
 # .. set the QSAR Toolbox prediction status, this is a singe value per structure and is set to failed if any profiler failed
 msk = (toolbox_predictions['chemId']=='not available') | toolbox_predictions['alerts'].isin(['Undefined', 'PROFILING TIMEOUT', 'ERROR!', '(N/A)'])
@@ -217,13 +227,13 @@ toolbox_predictions = toolbox_predictions.reset_index()
 toolbox_predictions = prediction_status.merge(toolbox_predictions, on='smiles_std', how='left')
 res = res.merge(toolbox_predictions, on='smiles_std', how='inner')
 # add the toxprints
-toxprints = pd.read_csv(r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP\Ames_agg_GM_CA_MN\training_eval_dataset\tabular/toxprint_v2_vs_genotoxicity_dataset.tsv', sep='\t')
+toxprints = pd.read_csv(r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_agg_GM_CA_MN\training_eval_dataset\tabular/toxprint_v2_vs_genotoxicity_dataset.tsv', sep='\t')
 toxprints = toxprints.dropna(how='any').reset_index(drop=True)
 toxprints = toxprints.drop('M_STRUCTURE_WARNING', axis='columns')
 toxprints = toxprints.rename(lambda col: 'toxprint: '+col, axis='columns')
 res = pd.concat([res, toxprints], axis='columns', sort=False, ignore_index=False)
 res = res.copy() #defragment the dataframe
-res.to_excel(r'D:\myApplications\local\2024_01_21_GCN_Muta\output\structural_alerts_coverage_AMES_agg_GM_CA_MN.xlsx', index=False)
+res.to_excel(r'D:\myApplications\local\2024_01_21_GCN_Muta\output\structural_alerts_coverage_AMES_agg_GM_CA_MN_early_stopping.xlsx', index=False)
 # res['Ames (prediction)'] = np.select([res['Ames (positive probability)']>=0.7, res['Ames (positive probability)']<=0.3], ['positive', 'negative'], 'ambiguous')
 # res.groupby(['Ames (experimental)', 'Ames (prediction)', 'Derek likelihood species:bacterium endpoint group: Genotoxicity (ALL)/Mutagenicity (ALL), endpoint: Mutagenicity in vitro']).size().sort_values(ascending=False).reset_index()
 
@@ -240,7 +250,7 @@ assert np.all(np.equal(res[[col for col in res.columns if col.startswith('toxpri
 
 # visualise the clusters (Derek bacterial mutation)
 import datamapplot
-structural_alerts = pd.read_excel(r'D:\myApplications\local\2024_01_21_GCN_Muta\output\structural_alerts_coverage_AMES_agg_GM_CA_MN.xlsx')
+structural_alerts = pd.read_excel(r'D:\myApplications\local\2024_01_21_GCN_Muta\output\structural_alerts_coverage_AMES_agg_GM_CA_MN_early_stopping.xlsx')
 # keep only plausible and probable with one alert and large clusters
 col_likelihood = 'Derek likelihood species:bacterium endpoint group: Genotoxicity (ALL)/Mutagenicity (ALL), endpoint: Mutagenicity in vitro'
 col_alerts = 'Derek alerts species:bacterium endpoint group: Genotoxicity (ALL)/Mutagenicity (ALL), endpoint: Mutagenicity in vitro'
@@ -256,7 +266,7 @@ datamapplot.create_plot(structural_alerts_data_map, labels, use_medoids=True,  l
 import datamapplot
 import colorcet
 from matplotlib.colors import rgb2hex
-structural_alerts = pd.read_excel(r'D:\myApplications\local\2024_01_21_GCN_Muta\output\structural_alerts_coverage_AMES_agg_GM_CA_MN.xlsx')
+structural_alerts = pd.read_excel(r'D:\myApplications\local\2024_01_21_GCN_Muta\output\structural_alerts_coverage_AMES_agg_GM_CA_MN_early_stopping.xlsx')
 # keep only plausible and probable with one alert and large clusters
 col_alert = 'QSAR Toolbox profiler: DNA alerts for AMES, CA and MNT by OASIS'
 # keep only the level three alerts
@@ -291,6 +301,90 @@ for darkmode in [True, False]:
     ax.spines['bottom'].set_visible(False)
     ax.spines['left'].set_visible(False)
     if darkmode:
-        fig.savefig(r'D:\myApplications\local\2024_01_21_GCN_Muta\output\DNA_alerts_AMES_CA_MNT_OASIS_overlay_AMES_CA_MNT_OASIS_embeddings_dark.png', dpi=600, bbox_inches='tight')
+        fig.savefig(r'D:\myApplications\local\2024_01_21_GCN_Muta\output\DNA_alerts_AMES_CA_MNT_OASIS_overlay_AMES_CA_MNT_OASIS_embeddings_dark_early_stopping.png', dpi=600, bbox_inches='tight')
     else:
-        fig.savefig(r'D:\myApplications\local\2024_01_21_GCN_Muta\output\DNA_alerts_AMES_CA_MNT_OASIS_overlay_AMES_CA_MNT_OASIS_embeddings_light.png', dpi=600, bbox_inches='tight')
+        fig.savefig(r'D:\myApplications\local\2024_01_21_GCN_Muta\output\DNA_alerts_AMES_CA_MNT_OASIS_overlay_AMES_CA_MNT_OASIS_embeddings_light_early_stopping.png', dpi=600, bbox_inches='tight')
+
+
+
+# check Toxprint enrichment for substances for which we have positive predictions with probability > 0.8 for GM, MN and CA and are positive or negative in Ames with probability > 0.7 (positives) or <= -.3 respectively (negatives)
+structural_alerts = pd.read_excel(r'D:\myApplications\local\2024_01_21_GCN_Muta\output\structural_alerts_coverage_AMES_agg_GM_CA_MN_early_stopping.xlsx')
+# positives
+threshold_positive = 0.7
+threshold_negative = 0.3
+msk_positives = ((structural_alerts['GM (positive probability)'] >= threshold_positive)
+       & (structural_alerts['MN (positive probability)'] >= threshold_positive)
+       & (structural_alerts['CA (positive probability)'] >= threshold_positive)
+       & (structural_alerts['Ames (positive probability)'] <= threshold_negative))
+msk_positives.sum()
+# negatives
+msk_negatives = ((structural_alerts['GM (positive probability)'] >= threshold_positive)
+       & (structural_alerts['MN (positive probability)'] >= threshold_positive)
+       & (structural_alerts['CA (positive probability)'] >= threshold_positive)
+       & (structural_alerts['Ames (positive probability)'] >= threshold_positive))
+msk_negatives.sum()
+# .. keep only the columns with toxiprints
+cols = [col for col in structural_alerts.columns if col.startswith('toxprint')]
+# .. check for enrichment
+# .. true/false positives are the positives for which the TP is present/absent
+# .. true/false negatives are the negatives for which the TP is absent/present
+enrichments = []
+for col in tqdm(cols):
+    tp = structural_alerts.loc[msk_positives, col].sum()
+    tn = (~(structural_alerts.loc[msk_negatives, col].astype(bool))).sum()
+    fp = structural_alerts.loc[msk_negatives, col].sum()
+    fn = (~(structural_alerts.loc[msk_positives, col].astype(bool))).sum()
+    tp_rate = tp / (tp + fn)
+    tn_rate = tn / (tn + fp)
+    enrichment = tp_rate / tn_rate
+    confusion_matrix = np.array([[tp, fn],
+                                 [fp, tn]])
+    oddsratio, p_value = fisher_exact(confusion_matrix, alternative='greater')
+    enrichment = {'toxprint': col, 'tp': tp, 'tn': tn, 'fp': fp, 'fn': fn, 'odds_ratio': oddsratio, 'p_value': p_value}
+    enrichments.append(enrichment)
+enrichments = pd.DataFrame(enrichments)
+enrichments = pd.DataFrame(enrichments)
+msk = (enrichments['p_value'] < 0.05) & (enrichments['odds_ratio'] >= 3) & (enrichments['tp'] > 5)
+enrichments = enrichments.loc[msk]
+enrichments = enrichments.sort_values('odds_ratio', ascending=False)
+enrichments.to_excel(r'D:\myApplications\local\2024_01_21_GCN_Muta\output\toxprint_enrichment_AMES_neg_CA_MNT_GM_pos_early_stopping.xlsx', index=False)
+enrichments.iloc[:10].to_clipboard()
+# plot the structures enriched in the chemotype toxprint: bond:CX_halide_aromatic-Cl_trihalo_benzene_(1_2_4-)
+chemotype = enrichments['toxprint'].iloc[0]
+msk_chemotype = structural_alerts[chemotype] > 0
+enriched_structures = structural_alerts.loc[msk_positives & msk_chemotype].sample(frac=1.)
+# create an image of the enriched structures
+molecules = [Chem.MolFromSmiles(smiles) for smiles in enriched_structures['smiles_std'].to_list()]
+for mol in molecules:
+    rdDepictor.Compute2DCoords(mol, clearConfs=False, canonOrient=False, nSample=100, sampleSeed=1)
+img = Draw.MolsToGridImage(molecules, molsPerRow=3, subImgSize=(400, 400), padding=0)
+fig = plt.figure(figsize=(10, 4))
+ax = fig.subplots()
+ax.imshow(img)
+ax.set_axis_off()
+fig.savefig(r'D:\myApplications\local\2024_01_21_GCN_Muta\output\enriched_structures_AMES_neg_CA_MNT_GM_pos_early_stopping_1st_chemotype.png', dpi=600, bbox_inches='tight')
+
+
+# trials
+# toxval_data
+toxval_data = pd.read_excel(r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_agg_GM_CA_MN\inference\ToxvalDB\training_eval_dataset\tabular\genotoxicity_dataset.xlsx')
+toxval_data['mol'] = toxval_data['smiles_std'].apply(Chem.MolFromSmiles)
+smarts = Chem.MolFromSmarts(r'[#9,#17,#35]-[#6]-1=[#6]-[#6](-[#9,#17,#35])=[#6](-[#9,#17,#35])-[#6]=[#6]-1')
+smarts = Chem.MolFromSmarts(r'Clc1ccc(Cl)c(Cl)c1')
+toxval_data['match'] = toxval_data['mol'].apply(lambda mol: mol.HasSubstructMatch(smarts))
+toxval_data.loc[toxval_data['match']]
+
+tmp = enriched_structures.copy()
+tmp['mol'] = tmp['smiles_std'].apply(Chem.MolFromSmiles)
+tmp['match'] = tmp['mol'].apply(lambda mol: mol.HasSubstructMatch(smarts))
+
+
+smiles = r'Clc1ccccc1'
+mol = Chem.MolFromSmiles(smiles)
+smarts = Chem.MolFromSmarts(r'ClC1=CC=CC=C1')
+mol.HasSubstructMatch(smarts)
+
+# smiles = r'ClC1=CC=CC=C1'
+# Chem.SanitizeMol(smarts)
+# img = Draw.MolToImage(mol).show()
+# Chem.Kekulize(mol)

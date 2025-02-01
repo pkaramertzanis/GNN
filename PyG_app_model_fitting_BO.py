@@ -19,7 +19,6 @@ from models.PyG_Dataset import PyG_Dataset
 from collections import Counter
 import pickle
 import json
-import math
 
 from sklearn.model_selection import StratifiedKFold
 
@@ -42,12 +41,12 @@ from optuna.storages import RetryFailedTrialCallback
 from models.metrics import plot_metrics_convergence
 
 # set the model architecture
-MODEL_NAME = 'GAT_GNN' # name of the model, can be 'MPNN_GNN', 'AttentiveFP_GNN' or 'GAT_GNN'
-STUDY_NAME = "GM" # name of the study in the Optuna sqlit database
+MODEL_NAME = 'GATConv_GNN' # name of the model, can be 'AttentiveFP_GNN', 'GCNConv_GNN' or 'GATConv_GNN'
+STUDY_NAME = "MN_corrected" # name of the study in the Optuna sqlit database
 
 # location to store the results
 output_path = Path(rf'output/{MODEL_NAME}/{STUDY_NAME}')
-output_path = Path(r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_agg_GM_CA_MN\inference\ToxvalDB')
+# output_path = Path(r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_agg_GM_CA_MN\inference\ToxvalDB')
 output_path.mkdir(parents=True, exist_ok=True)
 
 
@@ -58,35 +57,35 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 flat_datasets = [
                 # r'data/Hansen_2009/tabular/Hansen_2009_genotoxicity.xlsx',
                 # r'data/Leadscope/tabular/Leadscope_genotoxicity.xlsx',
-                # r'data/ECVAM_AmesNegative/tabular/ECVAM_Ames_negative_genotoxicity.xlsx',
-                # r'data/ECVAM_AmesPositive/tabular/ECVAM_Ames_positive_genotoxicity.xlsx',
-                # r'data/QSARChallengeProject/tabular/QSARChallengeProject.xlsx',
-                # r'data/QSARToolbox/tabular/QSARToolbox_genotoxicity.xlsx',
-                # r'data/REACH/tabular/REACH_genotoxicity.xlsx',
+                r'data/ECVAM_AmesNegative/tabular/ECVAM_Ames_negative_genotoxicity.xlsx',
+                r'data/ECVAM_AmesPositive/tabular/ECVAM_Ames_positive_genotoxicity.xlsx',
+                r'data/QSARChallengeProject/tabular/QSARChallengeProject.xlsx',
+                r'data/QSARToolbox/tabular/QSARToolbox_genotoxicity.xlsx',
+                r'data/REACH/tabular/REACH_genotoxicity.xlsx',
                 # r'data/Baderna_2020/tabular/Baderna_2020_genotoxicity.xlsx',
-                # r'data/Morita_2019/tabular/Morita_2019_genotoxicity.xlsx',
-                # r'data/NTP_mammalian_mutagenics/tabular/NTP_mammalian_mutagenics.xlsx',
-                r'data/ToxvalDB/tabular/ToxvalDB_genotoxicity.xlsx'
-
 ]
 task_specifications = [
-      # {'filters': {'assay': ['bacterial reverse mutation assay'], 'cell line/species': ['Escherichia coli (WP2 Uvr A)',
-      #                                                                                   # 'Salmonella typhimurium (TA 102)',
-      #                                                                                   'Salmonella typhimurium (TA 100)',
-      #                                                                                   'Salmonella typhimurium (TA 1535)',
-      #                                                                                   'Salmonella typhimurium (TA 98)',
-      #                                                                                   'Salmonella typhimurium (TA 1537)'
-      #                                                                                   ], 'metabolic activation': ['yes', 'no']},
-      #  'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay', 'cell line/species', 'metabolic activation']},
+      # {'filters': {'assay': ['bacterial reverse mutation assay'], 'cell line/species': [
+      #                                                                                      #  'Escherichia coli (WP2 Uvr A)',
+      # #                                                                                   # 'Salmonella typhimurium (TA 102)',
+      #                                                                                    'Salmonella typhimurium (TA 100)',
+      # #                                                                                   'Salmonella typhimurium (TA 1535)',
+      # #                                                                                   'Salmonella typhimurium (TA 98)',
+      # #                                                                                   'Salmonella typhimurium (TA 1537)'
+      #                                                                                    ], 'metabolic activation': [
+      #     'yes',
+      #     # 'no'
+      # ]},
+      #   'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay', 'cell line/species', 'metabolic activation']},
 
     #  {'filters': {'assay': ['bacterial reverse mutation assay']},
     #   'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
     #
-      {'filters': {'assay': ['in vitro mammalian cell micronucleus test']},
-        'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
-    # # #
-      {'filters': {'assay': ['in vitro mammalian chromosome aberration test']},
-       'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
+    {'filters': {'assay': ['in vitro mammalian cell micronucleus test']},
+     'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
+    # # # #
+    #   {'filters': {'assay': ['in vitro mammalian chromosome aberration test']},
+    #    'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
 
     # {'filters': {'assay': ['in vitro mammalian cell gene mutation test using the Hprt and xprt genes']},
     #  'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
@@ -94,8 +93,8 @@ task_specifications = [
     # {'filters': {'assay': ['in vitro mammalian cell gene mutation test using the thymidine kinase gene']},
     #  'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
 
-     {'filters': {'endpoint': ['in vitro gene mutation study in mammalian cells']},
-      'task aggregation columns': ['in vitro/in vivo', 'endpoint']},
+     # {'filters': {'endpoint': ['in vitro gene mutation study in mammalian cells']},
+     #  'task aggregation columns': ['in vitro/in vivo', 'endpoint']},
 
 ]
 # task_specifications = [
@@ -129,7 +128,7 @@ tasks = create_sdf(flat_datasets = flat_datasets,
 N_TRIALS = 200 # number of trials to be attempted by the Optuna optimiser
 PYTORCH_SEED = 2 # seed for PyTorch random number generator, it is also used for splits and shuffling to ensure reproducibility
 MINIMUM_TASK_DATASET = 300 # minimum number of data points for a task
-BATCH_SIZE_MAX = 490 # maximum batch size (largest task, the smaller tasks are scaled accordingly so the number of batches is the same)
+BATCH_SIZE_MAX = 220 # maximum batch size (largest task, the smaller tasks are scaled accordingly so the number of batches is the same)
 K_FOLD = 5 # number of folds for the cross-validation
 MAX_NUM_EPOCHS = 500 # maximum number of epochs
 SCALE_LOSS_TASK_SIZE = None # how to scale the loss function, can be 'equal task' or None
@@ -160,22 +159,12 @@ EDGE_FEATS = ['bond_type', 'is_conjugated', 'num_rings'] # ['bond_type', 'is_con
 # hyperparameter search space
 if MODEL_NAME == 'MPNN_GNN':
     model = MPNN_GNN
-    # model_parameters = {'n_conv': [3], # [1, 2, 3, 4, 5, 6]
-    #                     'n_lin': [1], # 1, 2, 3, 4]
-    #                     'n_conv_hidden': [64], # [32, 64, 128, 256]
-    #                     'n_edge_NN': [64], # [32, 64, 128, 256]
-    #                     'n_lin_hidden': [64], # [32, 64, 128, 256, 512]
-    #                     'dropout': [0.6], # [0.5, 0.6, 0.7, 0.8]
-    #                     'activation_function': [torch.nn.functional.leaky_relu],
-                        # 'learning_rate': [1.e-3],  # [0.001, 0.005, 0.01]
-                        # 'weight_decay': [1.e-3],  # [1.e-5, 1e-4, 1e-3]
-                        # }
     hyperparameters = {
         'model parameters': {
             'n_conv': IntDistribution(low=2, high=7, log=False, step=1),
-            'n_lin': IntDistribution(low=1, high=1, log=False, step=1),
+            'n_lin': IntDistribution(low=0, high=1, log=False, step=1),
             'n_conv_hidden': IntDistribution(low=50, high=300, log=False, step=25),
-            'n_edge_NN': IntDistribution(low=50, high=300, log=False, step=25),
+            'n_edge_NN': IntDistribution(low=16, high=128, log=False, step=16),
             'n_lin_hidden': IntDistribution(low=50, high=300, log=False, step=25),
             'dropout': FloatDistribution(low=0.0, high=0.8, step=None, log=False),
         },
@@ -200,17 +189,36 @@ elif MODEL_NAME == 'AttentiveFP_GNN':
             'scheduler_decay': FloatDistribution(low=0.94, high=0.99, step=None, log=False)
         }
     }
-elif MODEL_NAME == 'GAT_GNN':
-    model = GAT_GNN
+    elif MODEL_NAME == 'GATConv_GNN':
+    model = GATConv_GNN
     hyperparameters = {
         'model parameters': {
-            'v2': CategoricalDistribution(choices=[True, False]),
             'n_conv': IntDistribution(low=2, high=8, log=False, step=1),
-            'n_conv_hidden_per_head': IntDistribution(low=20, high=100, log=False, step=20),
-            'n_heads': IntDistribution(low=2, high=6, log=False, step=1),
-            'n_lin': IntDistribution(low=1, high=1, log=False, step=1),
+            'n_conv_hidden': IntDistribution(low=50, high=250, log=False, step=25),
+            'n_heads': IntDistribution(low=2, high=5, log=False, step=1),
+            'v2': CategoricalDistribution(choices=[True, False]),
+            'pool': CategoricalDistribution(choices=['mean', 'add']),
+            'n_lin': IntDistribution(low=0, high=1, log=False, step=1),
             'n_lin_hidden': IntDistribution(low=50, high=300, log=False, step=25),
-            'dropout': FloatDistribution(low=0.0, high=0.8, step=None, log=False),
+            'dropout_lin': FloatDistribution(low=0.0, high=0.8, step=None, log=False),
+            'dropout_conv': FloatDistribution(low=0.0, high=0.5, step=None, log=False),
+        },
+        'optimiser parameters': {
+            'learning_rate': FloatDistribution(low=1.e-5, high=1.e-2, step=None, log=True),
+            'weight_decay': FloatDistribution(low=1.e-7, high=1.e-2, step=None, log=True),
+            'scheduler_decay': FloatDistribution(low=0.94, high=0.99, step=None, log=False)
+        }
+    }
+elif MODEL_NAME == 'GCNConv_GNN':
+    model = GCNConv_GNN
+    hyperparameters = {
+        'model parameters': {
+            'n_conv': IntDistribution(low=2, high=8, log=False, step=1),
+            'n_conv_hidden': IntDistribution(low=50, high=250, log=False, step=25),
+            'pool': CategoricalDistribution(choices=['mean', 'add']),
+            'n_lin': IntDistribution(low=0, high=1, log=False, step=1),
+            'n_lin_hidden': IntDistribution(low=50, high=300, log=False, step=25),
+            'dropout_lin': FloatDistribution(low=0.0, high=0.8, step=None, log=False),
         },
         'optimiser parameters': {
             'learning_rate': FloatDistribution(low=1.e-5, high=1.e-2, step=None, log=True),
@@ -429,7 +437,7 @@ def objective(trial) -> float:
                 # if the first fold had balanced accuracy less than 3% of the maximum seen balanced accuracy do not continue with other folds, return the objective function value
                 msk = (metrics_history['type'] == 'aggregate (epoch)') & metrics_history['task'].isnull() & (metrics_history['stage'] == 'eval')
                 objective_function_value_fold = metrics_history.loc[msk].groupby(['model fit', 'fold'])['balanced accuracy'].max().mean()
-                if objective_function_value_fold < best_value - 0.03:
+                if objective_function_value_fold < best_value - 0.100000000:
                     objective_function_value = objective_function_value_fold
                     msg = f'balanced accuracy for fold {i_fold} is less than 3% of the maximum seen balanced accuracy, pruning the trial'
                     log.info(msg)
@@ -491,6 +499,18 @@ study.trials_dataframe().to_excel(output_path / 'study.xlsx', index=False)
 # refit the best model configuration to the whole training set, we do multiple fits and all are used for inference
 # .. find the optimal model configuration
 best_trial = study.best_trial
+# .. find the optimal epoch for each model fit
+model_fits = list(output_path.glob(f'trial_{best_trial.number}_fold_*_model_fit_*'))
+optimal_epochs = []
+for model_fit in model_fits:
+    metrics = pd.read_excel(model_fit / 'metrics_history.xlsx')
+    msk = (metrics['type'] == 'aggregate (epoch)') & metrics['task'].isnull() & (metrics['stage'] == 'eval')
+    idx = metrics.loc[msk, 'balanced accuracy'].idxmax()
+    optimal_epoch = metrics.loc[idx, 'epoch']
+    optimal_epochs.append(optimal_epoch)
+optimal_epoch = max(optimal_epochs)
+log.info(f'final model fitting will be terminated at epoch {optimal_epoch}')
+MAX_NUM_EPOCHS = optimal_epoch
 model_parameters = dict()
 for parameter in hyperparameters['model parameters']:
     # model_parameters[parameter.name] = getattr(trial, parameter.type)(parameter.name, parameter.lower_bound, parameter.upper_bound, log=parameter.log)
@@ -563,7 +583,7 @@ for i_model_fit in range(NUMBER_MODEL_FITS):
     for col in reversed(model_parameters):
         metrics_history.insert(0, col, model_parameters[col])
     # create folder to store the model fitting results
-    outp = output_path / f'best_configuration_model_fit_{i_model_fit}'
+    outp = output_path / f'best_configuration_model_fit_early_stopping_{i_model_fit}'
     outp.mkdir(parents=True, exist_ok=True)
     # plot and save the model convergence
     task_names = list(dsets.keys())

@@ -365,6 +365,7 @@ def train_eval(net,
         # log the metrics
         log.info(pd.DataFrame(metrics_epoch).drop(columns='roc'))
 
+    # empty the cache
+    torch.cuda.empty_cache()
+
     return metrics_history, model_summary
-
-

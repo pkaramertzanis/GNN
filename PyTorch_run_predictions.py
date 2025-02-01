@@ -33,7 +33,8 @@ pd.options.mode.copy_on_write = True
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 # structures to run predictions for
-structures_smiles = r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_agg_GM_CA_MN\inference\ToxValDB\training_eval_dataset\tabular/genotoxicity_dataset.xlsx'
+structures_smiles = r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_5_strains\inference\bacterial_mutagenicity_issty\training_eval_dataset\tabular/genotoxicity_dataset.xlsx'
+# structures_smiles = r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_agg_GM_CA_MN\inference\ToxValDB\training_eval_dataset\tabular/genotoxicity_dataset.xlsx'
 # structures_smiles = r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP\Ames_agg_GM_CA_MN\inference\morita_2019\training_eval_dataset\tabular/genotoxicity_dataset.xlsx'
 # structures_smiles = r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP\Ames_agg_GM_CA_MN\inference\leadscope\training_eval_dataset/tabular/genotoxicity_dataset.xlsx'
 structures = pd.read_excel(structures_smiles, usecols=['smiles_std']).dropna().drop_duplicates().rename({'smiles_std': 'smiles'}, axis='columns').reset_index() # this is a dataframe with a single smiles column
@@ -43,16 +44,19 @@ structures = pd.concat([structures['smiles'], pd.DataFrame(structures['smiles'].
 structures = structures.reset_index(drop=True).reset_index(drop=False).rename({'index': 'i mol'}, axis='columns')
 mols = structures['mol'].dropna().drop_duplicates().to_list()
 
+# model fit folder
+output_path = Path(r'D:\myApplications\local\2024_01_21_GCN_Muta\output\FFNN\Ames_Ecoli_WP2UvrAS9-')
+stopping = 'early_stopping'
 
 # model fit folder
-output_path = Path(r'D:\myApplications\local\2024_01_21_GCN_Muta\output\FFNN\MN')
 # load the fingerprint parameters and task names
 with open(output_path/'fingerprint_tasks.json', 'r') as f:
     fingerprint_tasks = json.load(f)
     fingerprint_parameters = fingerprint_tasks['fingerprint parameters']
     tasks = fingerprint_tasks['tasks']
 # run predictions with all final fitted models
-model_paths = list((output_path).glob(r'best_configuration_model_fit_*/model.pth'))
+model_paths = list((output_path).glob(fr'best_configuration_model_fit_{stopping}_*/model.pth'))
+# model_paths = list((output_path).glob(r'trial_164_fold_0_model_fit_*/model.pth'))
 all_predictions = []
 for i_model, model_path in enumerate(model_paths):
     log.info(f'running predictions for model: {i_model}')
@@ -64,5 +68,5 @@ for i_model, model_path in enumerate(model_paths):
     all_predictions.append(predictions)
 all_predictions = pd.concat(all_predictions, axis='index', sort=False, ignore_index=True)
 all_predictions = structures.merge(all_predictions, on='i mol', how='inner')
-all_predictions.to_pickle(r'D:\myApplications\local\2024_01_21_GCN_Muta\output\FFNN\MN\inference\ToxValDB\predictions.pickle')
+all_predictions.to_pickle(fr'D:\myApplications\local\2024_01_21_GCN_Muta\output\FFNN\Ames_Ecoli_WP2UvrAS9-\inference\bacterial_mutagenicity_issty\predictions_{stopping}.pickle')
 

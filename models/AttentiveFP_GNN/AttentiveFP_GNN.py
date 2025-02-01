@@ -162,7 +162,7 @@ class AttentiveFP_GNN(torch.nn.Module):
         :param edge_index:
         :param edge_attr:
         :param batch:
-        :param task_id:
+        :param task_id: the task ID to generate predictions/embeddings for
         :param embeddings: if True then the embeddings are returned, otherwise the logits
         :return:
         '''
