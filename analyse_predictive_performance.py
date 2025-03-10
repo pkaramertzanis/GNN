@@ -17,11 +17,13 @@ import pickle
 
 import matplotlib
 import matplotlib.pyplot as plt
-from sklearn.preprocessing import StandardScaler
 
 from rdkit import Chem
 from rdkit import DataStructs
 from rdkit.Chem import AllChem
+
+from adjustText import adjust_text
+import matplotlib.collections as mcollections
 
 # pandas display options
 # do not fold dataframes
@@ -118,7 +120,7 @@ print(res)
 
 # cross-validation model performance metrics
 import re
-model_fit_folder = Path(r'D:\myApplications\local\2024_01_21_GCN_Muta\output\FFNN\GM_no_scaling')
+model_fit_folder = Path(r'D:\myApplications\local\2024_01_21_GCN_Muta\output\GAT_GNN\Ames_TA1535S9-')
 try:
     # load the fingerprint parameters and task names
     with open(model_fit_folder/'fingerprint_tasks.json', 'r') as f:
@@ -184,10 +186,10 @@ perf_metrics_paths = {
 for key, perf_metrics_path in perf_metrics_paths.items():
     perf_metrics = pd.read_excel(perf_metrics_path, sheet_name='cross-validation', skiprows=[0])
     if key == 'AMES_agg_GM_CA_MN':
-        model_architecture_desired_order = ['FFNN', 'Att. FP', 'GAT', 'MPNN']
+        model_architecture_desired_order = ['FFNN', 'Att. FP', 'GAT', 'GCN']
         assay_desired_order = ['Ames', 'GM', 'CA', 'MN']
     else:
-        model_architecture_desired_order = ['FFNN', 'Att. FP', 'GAT', 'MPNN']
+        model_architecture_desired_order = ['FFNN', 'Att. FP', 'GAT', 'GCN']
         assay_desired_order = ['TA100\nS9+', 'TA100\nS9-', 'TA98\nS9+', 'TA98\nS9-', 'TA1535\nS9+', 'TA1535\nS9-', 'TA1537\nS9+', 'TA1537\nS9-', 'E. coli WP2\nUvr A S9+', 'E. coli WP2\nUvr A S9-']
     metrics_desired_order = ['sens.', 'spec.', 'bal. acc.', 'AUC']
     mt_st_desired_order = ['ST', 'MT']
@@ -274,29 +276,29 @@ reg_substances = reg_substances.merge(ccte_data[['identifier', 'smiles']], left_
 
 # compare model predictions with external (hold-out) test set
 prediction_thresholds = {'positive': 0.5, 'negative': 0.5}
-from sklearn.metrics import roc_auc_score, balanced_accuracy_score, recall_score
-# tasks = [
-#         # 'in vitro, in vitro chromosome aberration study in mammalian cells, in vitro mammalian chromosome aberration test',
-#        'in vitro, in vitro gene mutation study in mammalian cells',
-#        #  'in vitro, in vitro micronucleus study, in vitro mammalian cell micronucleus test',
-#         'in vitro, in vitro gene mutation study in bacteria, bacterial reverse mutation assay'
-# ]
-tasks = [
-   'in vitro, in vitro gene mutation study in bacteria, bacterial reverse mutation assay, Escherichia coli (WP2 Uvr A), no',
-   'in vitro, in vitro gene mutation study in bacteria, bacterial reverse mutation assay, Escherichia coli (WP2 Uvr A), yes',
-   'in vitro, in vitro gene mutation study in bacteria, bacterial reverse mutation assay, Salmonella typhimurium (TA 100), no',
-   'in vitro, in vitro gene mutation study in bacteria, bacterial reverse mutation assay, Salmonella typhimurium (TA 100), yes',
-   'in vitro, in vitro gene mutation study in bacteria, bacterial reverse mutation assay, Salmonella typhimurium (TA 1535), no',
-   'in vitro, in vitro gene mutation study in bacteria, bacterial reverse mutation assay, Salmonella typhimurium (TA 1535), yes',
-   'in vitro, in vitro gene mutation study in bacteria, bacterial reverse mutation assay, Salmonella typhimurium (TA 1537), no',
-   'in vitro, in vitro gene mutation study in bacteria, bacterial reverse mutation assay, Salmonella typhimurium (TA 1537), yes',
-   'in vitro, in vitro gene mutation study in bacteria, bacterial reverse mutation assay, Salmonella typhimurium (TA 98), no',
-   'in vitro, in vitro gene mutation study in bacteria, bacterial reverse mutation assay, Salmonella typhimurium (TA 98), yes'
- ]
+from sklearn.metrics import roc_auc_score, balanced_accuracy_score, recall_score, accuracy_score
+ # tasks = [
+ #          # 'in vitro, in vitro chromosome aberration study in mammalian cells, in vitro mammalian chromosome aberration test',
+ #          # 'in vitro, in vitro gene mutation study in mammalian cells',
+ #          # 'in vitro, in vitro micronucleus study, in vitro mammalian cell micronucleus test',
+ #          'in vitro, in vitro gene mutation study in bacteria, bacterial reverse mutation assay'
+ # ]
+ tasks = [
+     'in vitro, in vitro gene mutation study in bacteria, bacterial reverse mutation assay, Escherichia coli (WP2 Uvr A), no',
+     'in vitro, in vitro gene mutation study in bacteria, bacterial reverse mutation assay, Escherichia coli (WP2 Uvr A), yes',
+     'in vitro, in vitro gene mutation study in bacteria, bacterial reverse mutation assay, Salmonella typhimurium (TA 100), no',
+     'in vitro, in vitro gene mutation study in bacteria, bacterial reverse mutation assay, Salmonella typhimurium (TA 100), yes',
+     'in vitro, in vitro gene mutation study in bacteria, bacterial reverse mutation assay, Salmonella typhimurium (TA 1535), no',
+     'in vitro, in vitro gene mutation study in bacteria, bacterial reverse mutation assay, Salmonella typhimurium (TA 1535), yes',
+     'in vitro, in vitro gene mutation study in bacteria, bacterial reverse mutation assay, Salmonella typhimurium (TA 1537), no',
+     'in vitro, in vitro gene mutation study in bacteria, bacterial reverse mutation assay, Salmonella typhimurium (TA 1537), yes',
+     'in vitro, in vitro gene mutation study in bacteria, bacterial reverse mutation assay, Salmonella typhimurium (TA 98), no',
+     'in vitro, in vitro gene mutation study in bacteria, bacterial reverse mutation assay, Salmonella typhimurium (TA 98), yes'
+  ]
 for task in tasks:
+    # exp_data_training_path = r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_agg_GM_CA_MN\training_eval_dataset\tabular\genotoxicity_dataset.xlsx'
     exp_data_training_path = r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_5_strains\training_eval_dataset\tabular\genotoxicity_dataset.xlsx'
-    # exp_data_training_path = r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_5_strains\training_eval_dataset\tabular\genotoxicity_dataset.xlsx'
-    predictions_path = r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_5_strains\inference\bacterial_mutagenicity_issty/predictions_early_stopping.pickle'
+    predictions_path = r'D:\myApplications\local\2024_01_21_GCN_Muta\output\GAT_GNN\Ames_TA1535S9-\inference\bacterial_mutagenicity_issty/predictions_early_stopping.pickle'
     exp_external_testset_path = r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_5_strains\inference\bacterial_mutagenicity_issty\training_eval_dataset\tabular\genotoxicity_dataset.xlsx'
     # # .. load the predictions for this task
     predictions = pd.read_pickle(predictions_path)
@@ -339,6 +341,7 @@ for task in tasks:
             try:
                 sensitivity  = recall_score(compare['genotoxicity call (experimental)'], compare['genotoxicity call (predicted)'], pos_label='positive')
                 specificity  = recall_score(compare['genotoxicity call (experimental)'], compare['genotoxicity call (predicted)'], pos_label='negative')
+                print(sensitivity, specificity)
                 balanced_accuracy = balanced_accuracy_score(compare['genotoxicity call (experimental)'], compare['genotoxicity call (predicted)'])
                 roc_auc = roc_auc_score(compare['genotoxicity call (experimental)'].map({'positive': 1, 'negative': 0}), compare['positive (probability)'])
             except:
@@ -429,70 +432,79 @@ for task in tasks:
 # compare classifiers using the external (hold-out) test set and the McNemar test
 prediction_thresholds = {'positive': 0.5, 'negative': 0.5}
 from mlxtend.evaluate import mcnemar_table, mcnemar
-classifier_pairs =[
-    # ST vs MT
-    {'model 1': 'FFNN MT Ames T100S+', 'model 2': 'FFNN ST Ames T100S+',
-     'training set': r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_5_strains\training_eval_dataset\tabular\genotoxicity_dataset.xlsx',
-     'external test set': r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_5_strains\inference\bacterial_mutagenicity_issty\training_eval_dataset\tabular\genotoxicity_dataset.xlsx',
-     'model 1 predictions': r'D:\myApplications\local\2024_01_21_GCN_Muta\output\FFNN\Ames_5_strains\inference\bacterial_mutagenicity_issty/predictions.pickle',
-     'model 2 predictions': r'D:\myApplications\local\2024_01_21_GCN_Muta\output\FFNN\Ames_TA100S9+\inference\bacterial_mutagenicity_issty/predictions.pickle',
-     'task': 'in vitro, in vitro gene mutation study in bacteria, bacterial reverse mutation assay, Salmonella typhimurium (TA 100), yes'},
-    { 'model 1': 'FFNN MT GM', 'model 2': 'FFNN ST GM',
-     'training set': r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_agg_GM_CA_MN\training_eval_dataset\tabular\genotoxicity_dataset.xlsx',
-     'external test set': r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_agg_GM_CA_MN\inference\ToxValDB\training_eval_dataset\tabular\genotoxicity_dataset.xlsx',
-     'model 1 predictions':  r'D:\myApplications\local\2024_01_21_GCN_Muta\output\FFNN\Ames_agg_GM_CA_MN\inference\ToxValDB/predictions.pickle',
-     'model 2 predictions': r'D:\myApplications\local\2024_01_21_GCN_Muta\output\FFNN\GM\inference\ToxValDB/predictions.pickle',
-     'task': 'in vitro, in vitro gene mutation study in mammalian cells'},
-    {'model 1': 'FFNN MT CA', 'model 2': 'FFNN ST CA',
-     'training set': r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_agg_GM_CA_MN\training_eval_dataset\tabular\genotoxicity_dataset.xlsx',
-     'external test set': r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_agg_GM_CA_MN\inference\ToxValDB\training_eval_dataset\tabular\genotoxicity_dataset.xlsx',
-     'model 1 predictions': r'D:\myApplications\local\2024_01_21_GCN_Muta\output\FFNN\Ames_agg_GM_CA_MN\inference\ToxValDB/predictions.pickle',
-     'model 2 predictions': r'D:\myApplications\local\2024_01_21_GCN_Muta\output\FFNN\CA\inference\ToxValDB/predictions.pickle',
-     'task': 'in vitro, in vitro chromosome aberration study in mammalian cells, in vitro mammalian chromosome aberration test'},
-    {'model 1': 'FFNN MT MN', 'model 2': 'FFNN ST MN',
-     'training set': r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_agg_GM_CA_MN\training_eval_dataset\tabular\genotoxicity_dataset.xlsx',
-     'external test set': r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_agg_GM_CA_MN\inference\ToxValDB\training_eval_dataset\tabular\genotoxicity_dataset.xlsx',
-     'model 1 predictions': r'D:\myApplications\local\2024_01_21_GCN_Muta\output\FFNN\Ames_agg_GM_CA_MN\inference\ToxValDB/predictions.pickle',
-     'model 2 predictions': r'D:\myApplications\local\2024_01_21_GCN_Muta\output\FFNN\MN\inference\ToxValDB/predictions.pickle',
-     'task': 'in vitro, in vitro micronucleus study, in vitro mammalian cell micronucleus test'},
-    {'model 1': 'FFNN MT Ames agg', 'model 2': 'FFNN ST Ames agg',
-     'training set': r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_agg_GM_CA_MN\training_eval_dataset\tabular\genotoxicity_dataset.xlsx',
-     'external test set': r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_agg_GM_CA_MN\inference\bacterial_mutagenicity_issty_agg\training_eval_dataset\tabular\genotoxicity_dataset.xlsx',
-     'model 1 predictions': r'D:\myApplications\local\2024_01_21_GCN_Muta\output\FFNN\Ames_agg_GM_CA_MN\inference\bacterial_mutagenicity_issty_agg/predictions.pickle',
-     'model 2 predictions': r'D:\myApplications\local\2024_01_21_GCN_Muta\output\FFNN\Ames_agg\inference\bacterial_mutagenicity_issty_agg/predictions.pickle',
-     'task': 'in vitro, in vitro gene mutation study in bacteria, bacterial reverse mutation assay'},
-    # ST FFNN vs ST AttentiveFP
-    {'model 1': 'AttentiveFP ST GM', 'model 2': 'FFNN ST GM',
-     'training set': r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_agg_GM_CA_MN\training_eval_dataset\tabular\genotoxicity_dataset.xlsx',
-     'external test set': r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_agg_GM_CA_MN\inference\ToxValDB\training_eval_dataset\tabular\genotoxicity_dataset.xlsx',
-     'model 1 predictions': r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\GM\inference\ToxValDB/predictions.pickle',
-     'model 2 predictions': r'D:\myApplications\local\2024_01_21_GCN_Muta\output\FFNN\GM\inference\ToxValDB/predictions.pickle',
-     'task': 'in vitro, in vitro gene mutation study in mammalian cells'},
-    {'model 1': 'AttentiveFP ST MN', 'model 2': 'FFNN ST MN',
-     'training set': r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_agg_GM_CA_MN\training_eval_dataset\tabular\genotoxicity_dataset.xlsx',
-     'external test set': r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_agg_GM_CA_MN\inference\ToxValDB\training_eval_dataset\tabular\genotoxicity_dataset.xlsx',
-     'model 1 predictions': r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\MN\inference\ToxValDB/predictions.pickle',
-     'model 2 predictions': r'D:\myApplications\local\2024_01_21_GCN_Muta\output\FFNN\MN\inference\ToxValDB/predictions.pickle',
-     'task': 'in vitro, in vitro micronucleus study, in vitro mammalian cell micronucleus test'},
-    {'model 1': 'AttentiveFP ST TA100S9+', 'model 2': 'FFNN ST TA100S9+',
-     'training set': r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_5_strains\training_eval_dataset\tabular\genotoxicity_dataset.xlsx',
-     'external test set': r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_5_strains\inference\bacterial_mutagenicity_issty\training_eval_dataset\tabular\genotoxicity_dataset.xlsx',
-     'model 1 predictions': r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_TA100S9+\inference\bacterial_mutagenicity_issty/predictions.pickle',
-     'model 2 predictions': r'D:\myApplications\local\2024_01_21_GCN_Muta\output\FFNN\Ames_TA100S9+\inference\bacterial_mutagenicity_issty/predictions.pickle',
-     'task': 'in vitro, in vitro gene mutation study in bacteria, bacterial reverse mutation assay, Salmonella typhimurium (TA 100), yes'},
-]
+model_architectures = ['FFNN', 'AttentiveFP_GNN', 'GAT_GNN', 'GCN_GNN']
+tasks = [f'in vitro, in vitro gene mutation study in bacteria, bacterial reverse mutation assay, Salmonella typhimurium (TA {strain}), {metAct}' for strain in ['100', '98', '1535', '1537'] for metAct in ['yes', 'no']]\
+         +[f'in vitro, in vitro gene mutation study in bacteria, bacterial reverse mutation assay, Escherichia coli (WP2 Uvr A), {metAct}' for metAct in ['yes', 'no']]
+folders = ['Ames_5_strains', 'Ames_TA100S9+', 'Ames_TA100S9-', 'Ames_TA98S9+', 'Ames_TA98S9-', 'Ames_TA1535S9+', 'Ames_TA1535S-', 'Ames_TA1537S9+', 'Ames_TA1537S9-']
+# .. strain/metabolic activation specific Ames models
+classifier_pairs = []
+for task in tasks:
+    for model_architecture_1 in model_architectures:
+        for model_architecture_2 in model_architectures:
+            for folder_1 in folders:
+                for folder_2 in folders:
+                    classifier_pair = {'model 1':  f'{model_architecture_1} {folder_1} {task}' , 'model 2': f'{model_architecture_2} {folder_2} {task}',
+                                              'training set': r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_5_strains\training_eval_dataset\tabular\genotoxicity_dataset.xlsx',
+                                              'external test set': r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_5_strains\inference\bacterial_mutagenicity_issty\training_eval_dataset\tabular\genotoxicity_dataset.xlsx',
+                                              'model 1 predictions': rf'D:\myApplications\local\2024_01_21_GCN_Muta\output\{model_architecture_1}\{folder_1}\inference\bacterial_mutagenicity_issty/predictions_early_stopping.pickle',
+                                              'model 2 predictions': rf'D:\myApplications\local\2024_01_21_GCN_Muta\output\{model_architecture_2}\{folder_2}\inference\bacterial_mutagenicity_issty/predictions_early_stopping.pickle',
+                                              'task': task}
+                    classifier_pairs.append(classifier_pair)
+# .. aggregated Ames models
+tasks = [f'in vitro, in vitro gene mutation study in bacteria, bacterial reverse mutation assay']
+folders = ['Ames_agg_GM_CA_MN', 'Ames_agg']
+for task in tasks:
+    for model_architecture_1 in model_architectures:
+        for model_architecture_2 in model_architectures:
+            for folder_1 in folders:
+                for folder_2 in folders:
+                    classifier_pair = {'model 1':  f'{model_architecture_1} {folder_1} {task}' , 'model 2': f'{model_architecture_2} {folder_2} {task}',
+                                              'training set': r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_agg_GM_CA_MN\training_eval_dataset\tabular\genotoxicity_dataset.xlsx',
+                                              'external test set': r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_agg_GM_CA_MN\inference\bacterial_mutagenicity_issty_agg\training_eval_dataset\tabular\genotoxicity_dataset.xlsx',
+                                              'model 1 predictions': rf'D:\myApplications\local\2024_01_21_GCN_Muta\output\{model_architecture_1}\{folder_1}\inference\bacterial_mutagenicity_issty_agg/predictions_early_stopping.pickle',
+                                              'model 2 predictions': rf'D:\myApplications\local\2024_01_21_GCN_Muta\output\{model_architecture_2}\{folder_2}\inference\bacterial_mutagenicity_issty_agg/predictions_early_stopping.pickle',
+                                              'task': task}
+                    classifier_pairs.append(classifier_pair)
+# .. chromosome aberration models
+tasks = [f'in vitro, in vitro chromosome aberration study in mammalian cells, in vitro mammalian chromosome aberration test']
+folders = ['Ames_agg_GM_CA_MN', 'CA']
+for task in tasks:
+    for model_architecture_1 in model_architectures:
+        for model_architecture_2 in model_architectures:
+            for folder_1 in folders:
+                for folder_2 in folders:
+                    classifier_pair = {'model 1':  f'{model_architecture_1} {folder_1} {task}' , 'model 2': f'{model_architecture_2} {folder_2} {task}',
+                                              'training set': r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_agg_GM_CA_MN\training_eval_dataset\tabular\genotoxicity_dataset.xlsx',
+                                              'external test set': r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_agg_GM_CA_MN\inference\ToxValDB\training_eval_dataset\tabular\genotoxicity_dataset.xlsx',
+                                              'model 1 predictions': rf'D:\myApplications\local\2024_01_21_GCN_Muta\output\{model_architecture_1}\{folder_1}\inference\ToxValDB/predictions_early_stopping.pickle',
+                                              'model 2 predictions': rf'D:\myApplications\local\2024_01_21_GCN_Muta\output\{model_architecture_2}\{folder_2}\inference\ToxValDB/predictions_early_stopping.pickle',
+                                              'task': task}
+                    classifier_pairs.append(classifier_pair)
+# classifier_pairs = [classifier_pair for classifier_pair in classifier_pairs if
+#  (classifier_pair['model 1'] == 'AttentiveFP_GNN Ames_agg in vitro, in vitro gene mutation study in bacteria, bacterial reverse mutation assay' and classifier_pair['model 2'] == 'GCN_GNN Ames_agg_GM_CA_MN in vitro, in vitro gene mutation study in bacteria, bacterial reverse mutation assay')
+#  or
+#  (classifier_pair[
+#       'model 1'] == 'GCN_GNN Ames_agg_GM_CA_MN in vitro, in vitro gene mutation study in bacteria, bacterial reverse mutation assay' and
+#   classifier_pair[
+#       'model 2'] == 'AttentiveFP_GNN Ames_agg in vitro, in vitro gene mutation study in bacteria, bacterial reverse mutation assay')
+#  ]
 classifier_comparisons = []
-for classifier_pair in classifier_pairs:
+for classifier_pair in tqdm(classifier_pairs):
     task = classifier_pair['task']
     # .. load the predictions for this task
-    model_1_predictions = pd.read_pickle(classifier_pair['model 1 predictions'])
-    model_1_predicted_tasks = model_1_predictions['task'].drop_duplicates().to_list()
-    msk = model_1_predictions['task'] == task
-    model_1_predictions = model_1_predictions.loc[msk]
-    model_2_predictions = pd.read_pickle(classifier_pair['model 2 predictions'])
-    model_2_predicted_tasks = model_2_predictions['task'].drop_duplicates().to_list()
-    msk = model_2_predictions['task'] == task
-    model_2_predictions = model_2_predictions.loc[msk]
+    try:
+        model_1_predictions = pd.read_pickle(classifier_pair['model 1 predictions'])
+        model_1_predicted_tasks = model_1_predictions['task'].drop_duplicates().to_list()
+        msk = model_1_predictions['task'] == task
+        model_1_predictions = model_1_predictions.loc[msk]
+        model_2_predictions = pd.read_pickle(classifier_pair['model 2 predictions'])
+        model_2_predicted_tasks = model_2_predictions['task'].drop_duplicates().to_list()
+        msk = model_2_predictions['task'] == task
+        model_2_predictions = model_2_predictions.loc[msk]
+        if model_1_predictions.empty or model_2_predictions.empty:
+            continue
+    except FileNotFoundError as ex:
+        continue
     # .. load the training set and test sets and keep only positive and negative genotoxicity calls as these are only used for training and testing
     exp_data_training = pd.read_excel(classifier_pair['training set'])
     exp_data_training = exp_data_training.loc[exp_data_training['genotoxicity'].isin(['positive', 'negative'])]
@@ -504,6 +516,8 @@ for classifier_pair in classifier_pairs:
     # keep the predictions for the structures in the filtered test set
     model_1_predictions = model_1_predictions.loc[model_1_predictions['smiles'].isin(exp_data_external_testset['smiles_std'])]
     model_2_predictions = model_2_predictions.loc[model_2_predictions['smiles'].isin(exp_data_external_testset['smiles_std'])]
+    if model_1_predictions.empty or model_2_predictions.empty:
+        continue
     # .... average the predictions for the same structure across the models (take the mean of probabilities)
     model_1_predictions = model_1_predictions.groupby(['smiles'])['positive (probability)'].mean().reset_index()
     model_1_predictions['genotoxicity call (predicted)'] = np.select([model_1_predictions['positive (probability)']>=prediction_thresholds['positive'],
@@ -523,24 +537,166 @@ for classifier_pair in classifier_pairs:
     compare_model_1 = (model_1_predictions[['smiles', 'genotoxicity call (predicted)', 'positive (probability)']]
                .merge(exp_data_external_testset[['smiles_std', 'genotoxicity']].rename({'genotoxicity': 'genotoxicity call (experimental)'}, axis='columns'),
                       left_on='smiles', right_on='smiles_std', how='inner'))
+    accuracy_model_1 = accuracy_score(compare_model_1['genotoxicity call (experimental)'], compare_model_1['genotoxicity call (predicted)'])
     sensitivity_model_1 = recall_score(compare_model_1['genotoxicity call (experimental)'], compare_model_1['genotoxicity call (predicted)'], pos_label='positive')
     specificity_model_1 = recall_score(compare_model_1['genotoxicity call (experimental)'], compare_model_1['genotoxicity call (predicted)'], pos_label='negative')
     balanced_accuracy_model_1 = balanced_accuracy_score(compare_model_1['genotoxicity call (experimental)'], compare_model_1['genotoxicity call (predicted)'])
+    entry = classifier_pair
+    entry['number of structures'] = compare_model_1['smiles'].nunique()
+    entry['number of experimental positives'] = compare_model_1['genotoxicity call (experimental)'].value_counts().to_dict().get('positive', 0)
+    entry['accuracy model 1'] = accuracy_model_1
+    entry['balanced accuracy model 1'] = balanced_accuracy_model_1
     roc_auc_model_1 = roc_auc_score(compare_model_1['genotoxicity call (experimental)'].map({'positive': 1, 'negative': 0}), compare_model_1['positive (probability)'])
+    entry['AUC model 1'] = roc_auc_model_1
     compare_model_2 = (model_2_predictions[['smiles', 'genotoxicity call (predicted)', 'positive (probability)']]
                .merge(exp_data_external_testset[['smiles_std', 'genotoxicity']].rename({'genotoxicity': 'genotoxicity call (experimental)'}, axis='columns'),
                       left_on='smiles', right_on='smiles_std', how='inner'))
     sensitivity_model_2 = recall_score(compare_model_2['genotoxicity call (experimental)'], compare_model_2['genotoxicity call (predicted)'], pos_label='positive')
     specificity_model_2 = recall_score(compare_model_2['genotoxicity call (experimental)'], compare_model_2['genotoxicity call (predicted)'], pos_label='negative')
     balanced_accuracy_model_2 = balanced_accuracy_score(compare_model_2['genotoxicity call (experimental)'], compare_model_2['genotoxicity call (predicted)'])
+    accuracy_model_2 = accuracy_score(compare_model_2['genotoxicity call (experimental)'], compare_model_2['genotoxicity call (predicted)'])
+    entry['accuracy model 2'] = accuracy_model_2
+    entry['balanced accuracy model 2'] = balanced_accuracy_model_2
     roc_auc_model_2 = roc_auc_score(compare_model_2['genotoxicity call (experimental)'].map({'positive': 1, 'negative': 0}), compare_model_2['positive (probability)'])
+    entry['AUC model 2'] = roc_auc_model_2
     tb = mcnemar_table(y_target=compare_model_1['genotoxicity call (experimental)'],
-                       y_model1=compare_model_1['genotoxicity call (predicted)'],
-                       y_model2=compare_model_2['genotoxicity call (predicted)'])
+                                    y_model1=compare_model_1['genotoxicity call (predicted)'],
+                                    y_model2=compare_model_2['genotoxicity call (predicted)'])
     _, p = mcnemar(ary=tb, exact=True)
-    entry = classifier_pair
     print(f"{classifier_pair['model 1']} vs {classifier_pair['model 2']} -> McNemar exact p-value = {p:.3f}{'***' if p < 0.05 else ''}")
     print('McNemar table:\n', tb)
     entry['McNemar table'] = tb
     entry['p value'] = p
     classifier_comparisons.append(entry)
+classifier_comparisons = pd.DataFrame(classifier_comparisons)
+# .. keep only model pairs for which accuracy of model 1 is higher than accuracy of model 2 (no information loss due to symmetry)
+classifier_comparisons = classifier_comparisons.loc[classifier_comparisons['accuracy model 1'] > classifier_comparisons['accuracy model 2']]
+# .. save the model comparisons separately for endpoint aggregated and strain/metabolic activation specific models
+with pd.ExcelWriter(Path(r'D:\myApplications\local\2024_01_21_GCN_Muta\output')/'McNemar_external_test_set_classifier_comparisons.xlsx') as writer:
+    msk = classifier_comparisons['task'].str.contains(r'in vitro, in vitro gene mutation study in bacteria, bacterial reverse mutation assay.*TA.*')
+    # .. strain/metabolic activation specific models
+    res = classifier_comparisons.loc[msk]
+    res['model 1 (ST/MT)'] = np.where(res['model 1'].str.contains(r'5_strains'), 'MT', 'ST')
+    res['model 1 architecture'] = res['model 1'].str.split('_').str[0]
+    res['model 1 strain'] = res['model 1'].str.extract(r'(TA \d+)')
+    res['model 1 metabolic activation'] = res['model 1'].str.extract(r'(yes|no)')
+    res['model 2 (ST/MT)'] = np.where(res['model 2'].str.contains(r'5_strains'), 'MT', 'ST')
+    res['model 2 architecture'] = res['model 2'].str.split('_').str[0]
+    res['model 2 strain'] = res['model 1'].str.extract(r'(TA \d+)')
+    res['model 2 metabolic activation'] = res['model 2'].str.extract(r'(yes|no)')
+    res['same model architecture'] = res['model 1 architecture'] == res['model 2 architecture']
+    res.to_excel(writer, sheet_name='strain_metAct_models', index=False)
+    # .. endpoint aggregated models
+    res = classifier_comparisons.loc[~msk]
+    res['model 1 (ST/MT)'] = np.where(res['model 1'].str.contains(r'Ames_agg_GM_CA_MN'), 'MT', 'ST')
+    res['model 1 architecture'] = res['model 1'].str.split('_').str[0]
+    res['model 2 (ST/MT)'] = np.where(res['model 2'].str.contains(r'Ames_agg_GM_CA_MN'), 'MT', 'ST')
+    res['model 2 architecture'] = res['model 2'].str.split('_').str[0]
+    res['same model architecture'] = res['model 1 architecture'] == res['model 2 architecture']
+    res.to_excel(writer, sheet_name='endpoint_aggregated', index=False)
+
+
+
+# compare the external validation metrics with the second AMES QSAR international challenge project
+# load the external validation data
+ext_val_dat = pd.read_excel(r'data/second_Ames_QSAR_international_challenge.xlsx', sheet_name='external validation')
+fig = plt.figure(figsize=(8, 8))
+ax = fig.add_subplot()
+# .. set ticks and grid lines
+ticks = np.linspace(0, 100, 11)
+ax.set_xticks(ticks)
+ax.set_yticks(ticks)
+grid_lines = np.linspace(10., 90, 9)
+for i in grid_lines:
+    ax.axhline(i, color='grey', linestyle='--', linewidth=0.5, alpha=0.5)
+    ax.axvline(i, color='grey', linestyle='--', linewidth=0.5, alpha=0.5)
+# .. add the second international challenge metrics
+msk = ext_val_dat['source'] == 'second Ames/QSAR international challenge project'
+sensitivity = ext_val_dat.loc[msk, 'SENS (%)']
+specificity = ext_val_dat.loc[msk, 'SPEC (%)']
+sc1 = ax.scatter(100. - specificity, sensitivity, facecolor='steelblue', edgecolor='none', alpha=0.7, label='second Ames/QSAR international challenge project', zorder=2)
+# .. add the metrics for the models at endpoint level
+msk = (ext_val_dat['source'] == 'this work') &  (ext_val_dat['model'].str.contains('Ames'))
+sensitivity = ext_val_dat.loc[msk, 'SENS (%)']
+specificity = ext_val_dat.loc[msk, 'SPEC (%)']
+sc2 = ax.scatter(100. - specificity, sensitivity, facecolor='limegreen', edgecolor='none', alpha=0.7,  label='endpoint aggregated models', zorder=2)
+# .. add the metrics for the models at strain/metabolic activation level
+msk = (ext_val_dat['source'] == 'this work') &  (~ext_val_dat['model'].str.contains('Ames'))
+sensitivity = ext_val_dat.loc[msk, 'SENS (%)']
+specificity = ext_val_dat.loc[msk, 'SPEC (%)']
+sc3 = ax.scatter(100. - specificity, sensitivity, facecolor='orange', edgecolor='none', alpha=0.7, label='strain/metabolic activation specific models', zorder=2)
+ # .. draw a y = x line
+ax.plot([0, 100], [0, 100], color='black', linestyle='--', linewidth=0.5)
+# .. hide and move the spines
+ax.spines['top'].set_visible(False)
+ax.spines['right'].set_visible(False)
+ax.spines['left'].set_position(('outward', 10))
+ax.spines['bottom'].set_position(('outward', 10))
+# .. set the axis labels
+ax.set_xlabel('100 - specificity (%)', fontsize=10)
+ax.set_ylabel('sensitivity (%)', fontsize=10)
+# .. set the axes range
+ax.set_xlim([0., 100.])
+ax.set_ylim([0., 100.])
+# .. add legend
+ax.legend(loc='lower right', fontsize=10)
+# .. add labels
+sensitivity = ext_val_dat['SENS (%)']
+specificity = ext_val_dat['SPEC (%)']
+labels = ext_val_dat['model']
+msk = np.isfinite(sensitivity) & np.isfinite(specificity) & labels.str.contains('Att.FP')
+sensitivity = ext_val_dat.loc[msk, 'SENS (%)'].to_list()
+specificity = ext_val_dat.loc[msk, 'SPEC (%)'].to_list()
+labels = ext_val_dat.loc[msk, 'model'].to_list()
+texts = [ax.text(100. - specificity[i], sensitivity[i], labels[i].replace('Att.FP', ''),
+                 fontsize=8, ha='left',
+                 bbox=dict(facecolor='white', edgecolor='none', boxstyle='round,pad=0.0', alpha=0.0), zorder=1) for i in range(len(sensitivity))]
+adjust_text(texts,
+            arrowprops=dict(arrowstyle="-", color='grey', lw=0.5),
+            x = (100. - ext_val_dat[ 'SPEC (%)'].dropna()).to_list(),
+            y = ext_val_dat[ 'SENS (%)'].dropna().to_list(),
+            expand=(1.4, 2.0), # expand text bounding boxes by 1.4 fold in x direction and 2 fold in y direction
+            min_arrow_len=3,
+            ax=ax,
+            time_lim =2,
+            ensure_inside_axes = False,
+            explode_radius = 120,
+            # force_text = (8., 10.),
+            # force_static = (0.2, 0.4),
+            # pull_threshold = 100,
+            expand_axes  = False,)
+fig.savefig(Path(r'D:\myApplications\local\2024_01_21_GCN_Muta\output')/f'comparison_with_second_Ames_QSAR_international_challenge.png', dpi=600)
+
+
+# substances that are positive in three tests, AMES, in vitro chromosome aberration and in vivo micronucleus
+# https://www.sciencedirect.com/science/article/pii/S0273230021001835
+from cheminformatics.DSStox_structure_retrieval import retrieve_structure
+subs = pd.read_excel(r'D:\myApplications\local\2024_01_21_GCN_Muta\data/substances_positive_three_genotoxicity_tests_Benigni_2021.xlsx')
+structures = retrieve_structure(subs['CAS'].to_list(), 100)
+subs = subs.merge(structures[['searchValue', 'smiles']], left_on='CAS', right_on='searchValue', how='left')
+subs['mol'] = subs['smiles'].apply(lambda smiles: Chem.MolFromSmiles(smiles) if smiles else None)
+subs['InChi'] = subs['mol'].apply(lambda mol: Chem.MolToInchi(mol) if mol else None)
+subs = subs.drop('mol', axis='columns')
+# .. check which structures are in the training set and remove them
+training_data = pd.read_excel(r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_agg_GM_CA_MN\training_eval_dataset\tabular\genotoxicity_dataset.xlsx')
+training_data['mol'] = training_data['smiles_std'].apply(Chem.MolFromSmiles)
+training_data['InChI'] = training_data['mol'].apply(Chem.MolToInchi)
+subs['in training set'] = subs['InChi'].isin(training_data['InChI'])
+subs.to_excel(r'D:\myApplications\local\2024_01_21_GCN_Muta\data/substances_positive_three_genotoxicity_tests_Benigni_2021_with_structures.xlsx', index=False)
+
+# substances that were re-categorised as negative in CA
+# https://www.researchgate.net/publication/310815385_Validation_of_retrospective_evaluation_method_for_false_genotoxic_chemicals_with_strong_cytotoxicity_re-evaluation_using_in_vitro_micronucleus_test
+# https://pmc.ncbi.nlm.nih.gov/articles/PMC5761126/pdf/41021_2017_Article_91.pdf
+from cheminformatics.DSStox_structure_retrieval import retrieve_structure
+subs = pd.read_excel(r'D:\myApplications\local\2024_01_21_GCN_Muta\data/substances_recategorised_as_negative_in_CA_Honda_2016.xlsx')
+structures = retrieve_structure(subs['CAS'].to_list(), 100)
+subs = subs.merge(structures[['searchValue', 'smiles']], left_on='CAS', right_on='searchValue', how='left')
+subs['mol'] = subs['smiles'].apply(lambda smiles: Chem.MolFromSmiles(smiles) if smiles else None)
+subs['InChi'] = subs['mol'].apply(lambda mol: Chem.MolToInchi(mol) if mol else None)
+subs = subs.drop('mol', axis='columns')
+# .. check which structures are in the training set and remove them
+training_data = pd.read_excel(r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_agg_GM_CA_MN\training_eval_dataset\tabular\genotoxicity_dataset.xlsx')
+training_data['mol'] = training_data['smiles_std'].apply(Chem.MolFromSmiles)
+training_data['InChi'] = training_data['mol'].apply(Chem.MolToInchi)
+subs = subs.merge(training_data, on='InChi')
+subs.to_excel(r'D:\myApplications\local\2024_01_21_GCN_Muta\data/substances_recategorised_as_negative_in_CA_Honda_2016_with_structures_and_genotox.xlsx', index=False)

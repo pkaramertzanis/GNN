@@ -307,7 +307,7 @@ for darkmode in [True, False]:
 
 
 
-# check Toxprint enrichment for substances for which we have positive predictions with probability > 0.8 for GM, MN and CA and are positive or negative in Ames with probability > 0.7 (positives) or <= -.3 respectively (negatives)
+# check Toxprint enrichment for substances for which we have positive predictions with probability > 0.7 for GM, MN and CA and are positive or negative in Ames with probability > 0.7 (positives) or <= -.3 respectively (negatives)
 structural_alerts = pd.read_excel(r'D:\myApplications\local\2024_01_21_GCN_Muta\output\structural_alerts_coverage_AMES_agg_GM_CA_MN_early_stopping.xlsx')
 # positives
 threshold_positive = 0.7

@@ -26,7 +26,8 @@ from data.combine import create_sdf
 
 from models.MPNN_GNN.MPNN_GNN import MPNN_GNN
 from models.AttentiveFP_GNN.AttentiveFP_GNN import AttentiveFP_GNN
-from models.GAT_GNN.GAT_GNN import GAT_GNN
+from models.GATConv_GNN.GATConv_GNN import GATConv_GNN
+from models.GCNConv_GNN.GCNConv_GNN import GCNConv_GNN
 
 from visualisations.task_concordance import visualise_task_concordance
 from visualisations.database_concordance import visualise_database_concordance
@@ -157,24 +158,7 @@ NODE_FEATS = ['atom_symbol', 'atom_charge', 'atom_degree', 'atom_hybridization',
 EDGE_FEATS = ['bond_type', 'is_conjugated', 'num_rings'] # ['bond_type', 'is_conjugated', 'stereo_type']
 
 # hyperparameter search space
-if MODEL_NAME == 'MPNN_GNN':
-    model = MPNN_GNN
-    hyperparameters = {
-        'model parameters': {
-            'n_conv': IntDistribution(low=2, high=7, log=False, step=1),
-            'n_lin': IntDistribution(low=0, high=1, log=False, step=1),
-            'n_conv_hidden': IntDistribution(low=50, high=300, log=False, step=25),
-            'n_edge_NN': IntDistribution(low=16, high=128, log=False, step=16),
-            'n_lin_hidden': IntDistribution(low=50, high=300, log=False, step=25),
-            'dropout': FloatDistribution(low=0.0, high=0.8, step=None, log=False),
-        },
-        'optimiser parameters': {
-            'learning_rate': FloatDistribution(low=1.e-5, high=1.e-2, step=None, log=True),
-            'weight_decay': FloatDistribution(low=1.e-7, high=1.e-2, step=None, log=True),
-            'scheduler_decay': FloatDistribution(low=0.94, high=0.99, step=None, log=False)
-        }
-    }
-elif MODEL_NAME == 'AttentiveFP_GNN':
+if MODEL_NAME == 'AttentiveFP_GNN':
     model = AttentiveFP_GNN
     hyperparameters = {
         'model parameters': {
@@ -189,7 +173,7 @@ elif MODEL_NAME == 'AttentiveFP_GNN':
             'scheduler_decay': FloatDistribution(low=0.94, high=0.99, step=None, log=False)
         }
     }
-    elif MODEL_NAME == 'GATConv_GNN':
+elif MODEL_NAME == 'GATConv_GNN':
     model = GATConv_GNN
     hyperparameters = {
         'model parameters': {

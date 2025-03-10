@@ -23,6 +23,8 @@ class GATConv_GNN(torch.nn.Module):
                  n_classes: [int],
                  activation_function: Callable = torch.nn.functional.leaky_relu
                  ):
+
+
         """
         Implements the GAT multitask classifier in PyTorch Geometric
         :param num_node_features: number of node features
@@ -40,6 +42,7 @@ class GATConv_GNN(torch.nn.Module):
         :param activation_function: PyTorch activation function, e.g. torch.nn.functional.relu or torch.nn.functional.leaky_relu
         See
         https://pytorch-geometric.readthedocs.io/en/latest/generated/torch_geometric.nn.conv.GATConv.html#torch_geometric.nn.conv.GATConv
+        https://colab.research.google.com/drive/1I8a0DfQ3fI7Njc62__mVXUlcAleUclnb?usp=sharing
         """
         super().__init__()
 
