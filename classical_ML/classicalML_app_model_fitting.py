@@ -31,7 +31,7 @@ from data.combine import create_sdf
 
 # set the model architecture
 MODEL_NAME = 'RF'
-STUDY_NAME = "Ames_agg" # name of the study in the Optuna sqlit database
+STUDY_NAME = "Ames_Ecoli_WP2UvrAS9-_test" # name of the study in the Optuna sqlit database
 
 # location to store the results
 output_path = Path(rf'output/{MODEL_NAME}/{STUDY_NAME}')
@@ -49,26 +49,26 @@ flat_datasets = [
                 # r'data/Baderna_2020/tabular/Baderna_2020_genotoxicity.xlsx',
 ]
 task_specifications = [
-        #  {'filters': {'assay': ['bacterial reverse mutation assay'], 'cell line/species': [
-        #      'Escherichia coli (WP2 Uvr A)',
+          {'filters': {'assay': ['bacterial reverse mutation assay'], 'cell line/species': [
+              'Escherichia coli (WP2 Uvr A)',
         #      # 'Salmonella typhimurium (TA 102)',
-        #      # 'Salmonella typhimurium (TA 100)',
-        #      #  'Salmonella typhimurium (TA 1535)',
-        #       # 'Salmonella typhimurium (TA 98)',
-        #      # 'Salmonella typhimurium (TA 1537)'
-        #                                                                                   ], 'metabolic activation': [
-        #       # 'yes',
-        #       'no'
-        # ]}, 'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay', 'cell line/species', 'metabolic activation']},
+        #        'Salmonella typhimurium (TA 100)',
+        #'Salmonella typhimurium (TA 1535)',
+              # 'Salmonella typhimurium (TA 98)',
+              #  'Salmonella typhimurium (TA 1537)'
+                                                                                           ], 'metabolic activation': [
+              #    'yes',
+                'no'
+         ]}, 'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay', 'cell line/species', 'metabolic activation']},
 
-      {'filters': {'assay': ['bacterial reverse mutation assay']},
-       'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
+      # {'filters': {'assay': ['bacterial reverse mutation assay']},
+      #  'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
 
        # {'filters': {'assay': ['in vitro mammalian cell micronucleus test']},
        #  'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
     # #
-    #    {'filters': {'assay': ['in vitro mammalian chromosome aberration test']},
-    #     'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
+    # {'filters': {'assay': ['in vitro mammalian chromosome aberration test']},
+    #  'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
 
     # {'filters': {'assay': ['in vitro mammalian cell gene mutation test using the Hprt and xprt genes']},
     #  'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
@@ -160,7 +160,7 @@ param_grid = {
     'rf__n_estimators': [50, 100, 200, 300],
     'rf__max_depth': [None, 5, 10],
     'rf__min_samples_split': [2, 5],
-    'rf__class_weight': ['balanced',  {0: 1, 1: 1}]
+    'rf__class_weight': ['balanced',  {0: 1, 1: 10}]
 }
 
 # Perform 5-fold cross-validation using balanced accuracy

@@ -42,8 +42,8 @@ from optuna.storages import RetryFailedTrialCallback
 from models.metrics import plot_metrics_convergence
 
 # set the model architecture
-MODEL_NAME = 'GATConv_GNN' # name of the model, can be 'AttentiveFP_GNN', 'GCNConv_GNN' or 'GATConv_GNN'
-STUDY_NAME = "MN_corrected" # name of the study in the Optuna sqlit database
+MODEL_NAME = 'AttentiveFP_GNN' # name of the model, can be 'AttentiveFP_GNN', 'GCNConv_GNN' or 'GATConv_GNN'
+STUDY_NAME = "make_figure" # name of the study in the Optuna sqlit database
 
 # location to store the results
 output_path = Path(rf'output/{MODEL_NAME}/{STUDY_NAME}')
@@ -66,24 +66,24 @@ flat_datasets = [
                 # r'data/Baderna_2020/tabular/Baderna_2020_genotoxicity.xlsx',
 ]
 task_specifications = [
-      # {'filters': {'assay': ['bacterial reverse mutation assay'], 'cell line/species': [
-      #                                                                                      #  'Escherichia coli (WP2 Uvr A)',
-      # #                                                                                   # 'Salmonella typhimurium (TA 102)',
-      #                                                                                    'Salmonella typhimurium (TA 100)',
-      # #                                                                                   'Salmonella typhimurium (TA 1535)',
-      # #                                                                                   'Salmonella typhimurium (TA 98)',
-      # #                                                                                   'Salmonella typhimurium (TA 1537)'
-      #                                                                                    ], 'metabolic activation': [
-      #     'yes',
-      #     # 'no'
-      # ]},
-      #   'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay', 'cell line/species', 'metabolic activation']},
+       {'filters': {'assay': ['bacterial reverse mutation assay'], 'cell line/species': [
+                                                                                           'Escherichia coli (WP2 Uvr A)',
+                                                                                           'Salmonella typhimurium (TA 102)',
+                                                                                          'Salmonella typhimurium (TA 100)',
+                                                                                          'Salmonella typhimurium (TA 1535)',
+                                                                                          'Salmonella typhimurium (TA 98)',
+                                                                                          'Salmonella typhimurium (TA 1537)'
+                                                                                          ], 'metabolic activation': [
+           'yes',
+           'no'
+       ]},
+         'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay', 'cell line/species', 'metabolic activation']},
 
     #  {'filters': {'assay': ['bacterial reverse mutation assay']},
     #   'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
     #
-    {'filters': {'assay': ['in vitro mammalian cell micronucleus test']},
-     'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
+    # {'filters': {'assay': ['in vitro mammalian cell micronucleus test']},
+    #  'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
     # # # #
     #   {'filters': {'assay': ['in vitro mammalian chromosome aberration test']},
     #    'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},

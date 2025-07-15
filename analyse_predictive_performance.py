@@ -120,7 +120,7 @@ print(res)
 
 # cross-validation model performance metrics
 import re
-model_fit_folder = Path(r'D:\myApplications\local\2024_01_21_GCN_Muta\output\GAT_GNN\Ames_TA1535S9-')
+model_fit_folder = Path(r'D:\myApplications\local\2024_01_21_GCN_Muta\output\GAT_GNN\Ames_5_strains')
 try:
     # load the fingerprint parameters and task names
     with open(model_fit_folder/'fingerprint_tasks.json', 'r') as f:
@@ -193,6 +193,8 @@ for key, perf_metrics_path in perf_metrics_paths.items():
         assay_desired_order = ['TA100\nS9+', 'TA100\nS9-', 'TA98\nS9+', 'TA98\nS9-', 'TA1535\nS9+', 'TA1535\nS9-', 'TA1537\nS9+', 'TA1537\nS9-', 'E. coli WP2\nUvr A S9+', 'E. coli WP2\nUvr A S9-']
     metrics_desired_order = ['sens.', 'spec.', 'bal. acc.', 'AUC']
     mt_st_desired_order = ['ST', 'MT']
+    msk = perf_metrics['model architecture'].isin(model_architecture_desired_order)
+    perf_metrics = perf_metrics.loc[msk]
     perf_metrics['model architecture'] = pd.Categorical(perf_metrics['model architecture'], categories=model_architecture_desired_order, ordered=True)
     perf_metrics['task'] = pd.Categorical(perf_metrics['task'], categories=assay_desired_order, ordered=True)
     perf_metrics['MT/ST'] = pd.Categorical(perf_metrics['MT/ST'], categories=mt_st_desired_order, ordered=True)
@@ -298,7 +300,7 @@ from sklearn.metrics import roc_auc_score, balanced_accuracy_score, recall_score
 for task in tasks:
     # exp_data_training_path = r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_agg_GM_CA_MN\training_eval_dataset\tabular\genotoxicity_dataset.xlsx'
     exp_data_training_path = r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_5_strains\training_eval_dataset\tabular\genotoxicity_dataset.xlsx'
-    predictions_path = r'D:\myApplications\local\2024_01_21_GCN_Muta\output\GAT_GNN\Ames_TA1535S9-\inference\bacterial_mutagenicity_issty/predictions_early_stopping.pickle'
+    predictions_path = r'D:\myApplications\local\2024_01_21_GCN_Muta\output\GAT_GNN\Ames_5_strains\inference\bacterial_mutagenicity_issty/predictions_early_stopping.pickle'
     exp_external_testset_path = r'D:\myApplications\local\2024_01_21_GCN_Muta\output\AttentiveFP_GNN\Ames_5_strains\inference\bacterial_mutagenicity_issty\training_eval_dataset\tabular\genotoxicity_dataset.xlsx'
     # # .. load the predictions for this task
     predictions = pd.read_pickle(predictions_path)
@@ -655,12 +657,12 @@ adjust_text(texts,
             arrowprops=dict(arrowstyle="-", color='grey', lw=0.5),
             x = (100. - ext_val_dat[ 'SPEC (%)'].dropna()).to_list(),
             y = ext_val_dat[ 'SENS (%)'].dropna().to_list(),
-            expand=(1.4, 2.0), # expand text bounding boxes by 1.4 fold in x direction and 2 fold in y direction
-            min_arrow_len=3,
+            expand=(1.4, 2.2), # expand text bounding boxes by 1.4 fold in x direction and 2 fold in y direction
+            min_arrow_len=10,
             ax=ax,
-            time_lim =2,
-            ensure_inside_axes = False,
-            explode_radius = 120,
+            time_lim = 4,
+            ensure_inside_axes = True,
+            explode_radius = 160,
             # force_text = (8., 10.),
             # force_static = (0.2, 0.4),
             # pull_threshold = 100,
@@ -700,3 +702,40 @@ training_data['mol'] = training_data['smiles_std'].apply(Chem.MolFromSmiles)
 training_data['InChi'] = training_data['mol'].apply(Chem.MolToInchi)
 subs = subs.merge(training_data, on='InChi')
 subs.to_excel(r'D:\myApplications\local\2024_01_21_GCN_Muta\data/substances_recategorised_as_negative_in_CA_Honda_2016_with_structures_and_genotox.xlsx', index=False)
+
+
+# read the cross-validation results for RF
+from pathlib import Path
+cv_result_paths = list(Path(r'D:\myApplications\local\2024_01_21_GCN_Muta\output\RF').glob('*'))
+all_data = {}
+for cv_result_path in cv_result_paths:
+    data = pd.read_excel(cv_result_path/'cv_results.xlsx')
+    msk = data['rank_test_score'] == 1
+    all_data[cv_result_path.name] = data.loc[msk].squeeze()
+all_data = pd.DataFrame.from_dict(all_data, orient='columns')
+all_data = all_data.drop('params', axis='index')
+
+
+# paired t-test comparison of balanced accuracy and AUC for the endpoint-level models
+import numpy as np
+from scipy import stats
+data = pd.read_excel(r'D:\myApplications\local\2024_01_21_GCN_Muta\output\compare_predictive_performance_AMES_5_strains.xlsx', sheet_name='cross-validation', skiprows=1)
+cols = ['model architecture', 'MT/ST', 'task', 'bal. acc. (mean)', 'AUC (mean)']
+data = data[cols].dropna(how='any', axis='index')
+models = data[['model architecture', 'MT/ST']].drop_duplicates()
+stat_results = []
+metric = 'bal. acc. (mean)' # 'AUC (mean)' # 'bal. acc. (mean)'
+for idx1, model1 in models.iterrows():
+    for idx2, model2 in models.iterrows():
+        if idx1 >= idx2:
+            continue
+        msk1 = (data['model architecture'] == model1['model architecture']) & (data['MT/ST'] == model1['MT/ST'])
+        msk2 = (data['model architecture'] == model2['model architecture']) & (data['MT/ST'] == model2['MT/ST'])
+        array1 = data.loc[msk1,metric].values
+        array2 = data.loc[msk2, metric].values
+        t_stat, p_value = stats.ttest_rel(array1, array2)
+        stat_results.append({'model1': f"{model1['model architecture']} {model1['MT/ST']}", 'model2': f"{model2['model architecture']} {model2['MT/ST']}", 't_stat': t_stat, 'p_value': p_value})
+stat_results = pd.DataFrame(stat_results)
+stat_results.sort_values(by='p_value', ascending=True)
+msk =  stat_results['model1'].str.contains('MT') & stat_results['model2'].str.contains('MT')
+stat_results.loc[msk].sort_values(by='p_value', ascending=True)

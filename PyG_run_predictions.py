@@ -46,7 +46,7 @@ mols = structures['mol'].dropna().drop_duplicates().to_list()
 
 
 # model fit folder
-output_path = Path(fr'D:\myApplications\local\2024_01_21_GCN_Muta\output\GAT_GNN\Ames_TA1535S9-')
+output_path = Path(fr'D:\myApplications\local\2024_01_21_GCN_Muta\output\GAT_GNN\Ames_5_strains')
 stopping = 'early_stopping'
 
 # load the node and edge features, feature values and tasks
@@ -73,7 +73,7 @@ for i_model, model_path in enumerate(model_paths):
 all_predictions = pd.concat(all_predictions, axis='index', sort=False, ignore_index=True)
 all_predictions = structures.merge(all_predictions, on='i mol', how='inner')
 # (all_predictions.pivot_table(index='i mol', columns='task', values='positive (probability)', aggfunc='mean')>0.5).sum()
-all_predictions.to_pickle(fr'D:\myApplications\local\2024_01_21_GCN_Muta\output\GAT_GNN\Ames_TA1535S9-/inference/bacterial_mutagenicity_issty\predictions_{stopping}.pickle')
+all_predictions.to_pickle(fr'D:\myApplications\local\2024_01_21_GCN_Muta\output\GAT_GNN\Ames_5_strains/inference/bacterial_mutagenicity_issty/predictions_{stopping}.pickle')
 
 # run inference with all final fitted models (embeddings)
 all_embeddings = []
@@ -88,7 +88,7 @@ for i_model, model_path in enumerate(model_paths):
     all_embeddings.append(embeddings)
 all_embeddings = pd.concat(all_embeddings, axis='index', sort=False, ignore_index=True)
 all_embeddings = structures.merge(all_embeddings, on='i mol', how='inner')
-all_embeddings.to_pickle(fr'D:\myApplications\local\2024_01_21_GCN_Muta\output\GCN_GNN\MN/inference/baderna_2020\embeddings_{stopping}.pickle')
+all_embeddings.to_pickle(fr'D:\myApplications\local\2024_01_21_GCN_Muta\output\GAT_GNN\Ames_5_strains/inference/bacterial_mutagenicity_issty/embeddings_{stopping}.pickle')
 
 
 

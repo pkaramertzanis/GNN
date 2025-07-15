@@ -83,6 +83,9 @@ def train_eval(net,
 
     # train
     for i_epoch in range(num_epochs):
+        # clear up the cache before each epoch
+        torch.cuda.empty_cache()
+
         metrics_epoch = []
         net.train()
 
