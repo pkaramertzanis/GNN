@@ -69,7 +69,7 @@ output_path.mkdir(parents=True, exist_ok=True)
 # set the device
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-# set up the dataset
+# set up the dataset to be used
 flat_datasets = [
                 # r'data/Hansen_2009/tabular/Hansen_2009_genotoxicity.xlsx',
                 # r'data/Leadscope/tabular/Leadscope_genotoxicity.xlsx',
@@ -81,52 +81,31 @@ flat_datasets = [
                 # r'data/Baderna_2020/tabular/Baderna_2020_genotoxicity.xlsx',
 ]
 task_specifications = [
-        #  {'filters': {'assay': ['bacterial reverse mutation assay'], 'cell line/species': [
-        #      'Escherichia coli (WP2 Uvr A)',
-        #      # 'Salmonella typhimurium (TA 102)',
-        #      # 'Salmonella typhimurium (TA 100)',
-        #      #  'Salmonella typhimurium (TA 1535)',
-        #       # 'Salmonella typhimurium (TA 98)',
-        #      # 'Salmonella typhimurium (TA 1537)'
-        #                                                                                   ], 'metabolic activation': [
-        #       # 'yes',
-        #       'no'
-        # ]}, 'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay', 'cell line/species', 'metabolic activation']},
+    #  {'filters': {'assay': ['bacterial reverse mutation assay'], 'cell line/species': [
+    #      'Escherichia coli (WP2 Uvr A)',
+    #      'Salmonella typhimurium (TA 102)',
+    #      'Salmonella typhimurium (TA 100)',
+    #      'Salmonella typhimurium (TA 1535)',
+    #      'Salmonella typhimurium (TA 98)',
+    #      'Salmonella typhimurium (TA 1537)'
+    #     ], 'metabolic activation': [
+    #         'yes',
+    #         'no'
+    # ]}, 'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay', 'cell line/species', 'metabolic activation']},
 
-     # {'filters': {'assay': ['bacterial reverse mutation assay']},
-     #  'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
-
-       # {'filters': {'assay': ['in vitro mammalian cell micronucleus test']},
-       #  'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
-    # #
-    #    {'filters': {'assay': ['in vitro mammalian chromosome aberration test']},
-    #     'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
-
-    # {'filters': {'assay': ['in vitro mammalian cell gene mutation test using the Hprt and xprt genes']},
-    #  'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
-    #
-    # {'filters': {'assay': ['in vitro mammalian cell gene mutation test using the thymidine kinase gene']},
+    # {'filters': {'assay': ['bacterial reverse mutation assay']},
     #  'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
 
-  {'filters': {'endpoint': ['in vitro gene mutation study in mammalian cells']},
-   'task aggregation columns': ['in vitro/in vivo', 'endpoint']},
+    # {'filters': {'assay': ['in vitro mammalian cell micronucleus test']},
+    #  'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
 
+    #  {'filters': {'assay': ['in vitro mammalian chromosome aberration test']},
+    #   'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay']},
+
+   {'filters': {'endpoint': ['in vitro gene mutation study in mammalian cells']},
+    'task aggregation columns': ['in vitro/in vivo', 'endpoint']},
 ]
-# task_specifications = [
-#      {'filters': {'assay': ['bacterial reverse mutation assay'], },
-#       'task aggregation columns': ['in vitro/in vivo', 'endpoint']},
-# ]
-# task_specifications = [
-#     {'filters': {'assay': ['bacterial reverse mutation assay'], 'cell line/species': [#'Escherichia coli (WP2 Uvr A)',
-#                                                                                       #'Salmonella typhimurium (TA 102)',
-#                                                                                       'Salmonella typhimurium (TA 100)',
-#                                                                                       #'Salmonella typhimurium (TA 1535)',
-#                                                                                       'Salmonella typhimurium (TA 98)',
-#                                                                                       #'Salmonella typhimurium (TA 1537)'
-#                                                                                       ], 'metabolic activation': ['yes', 'no']},
-#      'task aggregation columns': ['in vitro/in vivo', 'endpoint', 'assay', 'cell line/species']},
-#
-# ]
+
 training_eval_dataset_path_tabular = Path(output_path / 'training_eval_dataset/tabular')
 training_eval_dataset_path_tabular.mkdir(parents=True, exist_ok=True)
 training_eval_dataset_path_sdf = Path(output_path / 'training_eval_dataset/sdf')
